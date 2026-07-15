@@ -1,0 +1,54 @@
+FROM debian:trixie-slim
+
+ENV DEBIAN_FRONTEND=noninteractive
+ENV TZ=Europe/Moscow
+
+RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        g++-14 \
+        gcc-14 \
+        cmake \
+        ninja-build \
+        make \
+        gdb \
+        git \
+        pkg-config \
+        ca-certificates \
+        libboost-dev \
+        libgtest-dev \
+        libgmock-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-14 100 \
+        --slave /usr/bin/g++ g++ /usr/bin/g++-14 \
+        --slave /usr/bin/gcov gcov /usr/bin/gcov-14
+
+ENV CC=gcc-14
+ENV CXX=g++-14
+
+# fmt and spdlog built from source: latest stable, matched pair.
+# spdlog 1.17.0 bundles fmt 12.1 -> external fmt 12.2 (same major) is compatible.
+ARG FMT_VERSION=12.2.0
+ARG SPDLOG_VERSION=1.17.0
+
+RUN git clone --depth 1 --branch ${FMT_VERSION} https://github.com/fmtlib/fmt.git /tmp/fmt \
+    && cmake -S /tmp/fmt -B /tmp/fmt/build -G Ninja \
+        -DCMAKE_BUILD_TYPE=Release \
+        -DCMAKE_POSITION_INDEPENDENT_CODE=ON \
+        -DFMT_TEST=OFF \
+        -DFMT_DOC=OFF \
+    && cmake --build /tmp/fmt/build --target install \
+    && rm -rf /tmp/fmt
+
+RUN git clone --depth 1 --branch v${SPDLOG_VERSION} https://github.com/gabime/spdlog.git /tmp/spdlog \
+    && cmake -S /tmp/spdlog -B /tmp/spdlog/build -G Ninja \
+        -DCMAKE_BUILD_TYPE=Release \
+        -DCMAKE_POSITION_INDEPENDENT_CODE=ON \
+        -DSPDLOG_FMT_EXTERNAL=ON \
+        -DSPDLOG_BUILD_EXAMPLE=OFF \
+        -DSPDLOG_BUILD_TESTS=OFF \
+    && cmake --build /tmp/spdlog/build --target install \
+    && rm -rf /tmp/spdlog
+
+WORKDIR /workspace
