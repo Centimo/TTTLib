@@ -84,3 +84,6 @@ Desktop.ini
 # Package managers
 conan/
 vcpkg_installed/
+
+# Extra build dirs
+build-*/

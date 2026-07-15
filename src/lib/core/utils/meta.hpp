@@ -61,7 +61,9 @@ concept Tuple_like =
 
 template<
   Tuple_like Tuple,
-  template< Tuple_like, size_t > class Iteration_function,
+  // The first parameter is intentionally unconstrained: gcc rejects a constrained
+  // template-template parameter (P0522) even when the passed alias constrains it itself.
+  template< class, size_t > class Iteration_function,
   template< class... > class Cycle_function,
   size_t... indexes
 >
@@ -197,8 +199,7 @@ class Binary_search {
     if constexpr (Is_equal< T, Pivot_element >::value) {
       return pivot_index;
     }
-
-    if constexpr (Less_l< T, Pivot_element >::value) {
+    else if constexpr (Less_l< T, Pivot_element >::value) {
       using Left_subtuple = typename Make_subtuple< Tuple, 0, pivot_index >::type;
       return Binary_search< Left_subtuple, T, Less_l, Is_equal >::value;
     }
@@ -208,8 +209,9 @@ class Binary_search {
       if constexpr (!right_subtuple_search_result) {
         return right_subtuple_search_result;
       }
-
-      return *right_subtuple_search_result + tuple_size - std::tuple_size_v< Right_subtuple >;
+      else {
+        return *right_subtuple_search_result + tuple_size - std::tuple_size_v< Right_subtuple >;
+      }
     }
   }
 
@@ -233,13 +235,13 @@ class Binary_search< Tuple, T, Less_l, Is_equal > {
     }
 
     if constexpr (tuple_size > 0) {
-      if constexpr (Is_equal< std::tuple_element_t< 0, Tuple >, T >::value) {
+      if constexpr (Is_equal< T, std::tuple_element_t< 0, Tuple > >::value) {
         return 0;
       }
     }
 
     if constexpr (tuple_size > 1) {
-      if constexpr (Is_equal< std::tuple_element_t< 1, Tuple >, T >::value) {
+      if constexpr (Is_equal< T, std::tuple_element_t< 1, Tuple > >::value) {
         return 1;
       }
     }
@@ -251,26 +253,23 @@ class Binary_search< Tuple, T, Less_l, Is_equal > {
   static constexpr std::optional< size_t > value = make_result();
 };
 
-template< Tuple_like Tuple, size_t... indexes >
+// Expects a Tuple already sorted by Less_l: duplicates land in adjacent positions.
+// Two adjacent elements are equivalent (a duplicate) iff neither is Less than the other.
+template< Tuple_like Tuple, template< class, class > class Less_l, size_t... indexes >
 static constexpr bool is_contains_duplicates(std::index_sequence< indexes... >) {
   constexpr size_t tuple_size = std::tuple_size_v< Tuple >;
   static_assert(tuple_size > sizeof...(indexes), "tuple_size must be greater than index_sequence length");
 
-  if constexpr (std::tuple_size_v< Tuple > < 2) {
+  if constexpr (tuple_size < 2) {
     return false;
   }
-
-  if constexpr (!(
-    std::is_same_v<
-      std::tuple_element_t< indexes, Tuple >,
-      std::tuple_element_t< indexes + 1, Tuple >
-    >
-    || ...)
-  ) {
-    return false;
+  else {
+    return (
+      (   !Less_l< std::tuple_element_t< indexes, Tuple >, std::tuple_element_t< indexes + 1, Tuple > >::value
+       && !Less_l< std::tuple_element_t< indexes + 1, Tuple >, std::tuple_element_t< indexes, Tuple > >::value )
+      || ...
+    );
   }
-
-  return true;
 }
 
 } // namespace details
@@ -302,13 +301,21 @@ class Sort {
     std::declval< typename Sort< Greater_than_or_equeal_to_pivot, Less_l >::type >()
   ));
 
-  template< class T, template< class, class > class Is_equal = std::is_same >
+  // Order-equivalence induced by Less_l: the natural equality for a Less_l-sorted tuple.
+  // Using std::is_same as the default would give false negatives whenever the ordering
+  // treats distinct types as equivalent.
+  template< class First, class Second >
+  struct Equivalent_under_less {
+    static constexpr bool value = !Less_l< First, Second >::value && !Less_l< Second, First >::value;
+  };
+
+  template< class T, template< class, class > class Is_equal = Equivalent_under_less >
   static constexpr std::optional< size_t > find() {
-    return details::Binary_search< Tuple, T, Less_l, Is_equal >::value;
+    return details::Binary_search< type, T, Less_l, Is_equal >::value;
   }
 
   static constexpr bool _is_contains_duplicates =
-    details::is_contains_duplicates< Tuple >(std::make_index_sequence< _tuple_size - 1 >{});
+    details::is_contains_duplicates< type, Less_l >(std::make_index_sequence< _tuple_size - 1 >{});
 };
 
 template< Tuple_like Tuple, template< class, class > class Less_l >
@@ -317,20 +324,25 @@ class Sort< Tuple, Less_l > {
  public:
   using type = Tuple;
 
-  template< class T, template< class, class > class Is_equal = std::is_same >
+  template< class First, class Second >
+  struct Equivalent_under_less {
+    static constexpr bool value = !Less_l< First, Second >::value && !Less_l< Second, First >::value;
+  };
+
+  template< class T, template< class, class > class Is_equal = Equivalent_under_less >
   static constexpr std::optional< size_t > find() {
     if constexpr (std::tuple_size_v< Tuple > == 0) {
       return std::nullopt;
     }
-
-    if constexpr (!Is_equal< std::tuple_element_t< 0, Tuple >, T >::value) {
+    else if constexpr (!Is_equal< T, std::tuple_element_t< 0, Tuple > >::value) {
       return std::nullopt;
     }
-
-    return 0;
+    else {
+      return 0;
+    }
   }
 
   static constexpr bool _is_contains_duplicates = false;
 };
 
-} // namespace core::utils
+} // namespace core::utils::meta

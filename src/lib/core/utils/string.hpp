@@ -3,24 +3,50 @@
 #include "general.hpp"
 #include "meta.hpp"
 
-#include <cvs/common/constexprString.hpp>
-
+#include <algorithm>
 #include <array>
 #include <string>
+#include <string_view>
 #include <tuple>
 #include <unordered_map>
 
 
+namespace core::utils::string {
+
+// Compile-time string usable as a non-type template parameter (structural type).
+template< std::size_t N >
+struct fixed_string {
+  char _data[N] {};
+
+  consteval fixed_string(const char (&literal)[N]) {
+    std::copy_n(literal, N, _data);
+  }
+
+  constexpr std::string_view view() const {
+    return { _data, N - 1 };  // strip trailing '\0'
+  }
+
+  constexpr auto operator<=>(const fixed_string&) const = default;
+};
+
+// Wrapper providing a static 'view()', so a string can be carried as a type argument.
+template< fixed_string String >
+struct Constexpr_string {
+  static constexpr std::string_view view() {
+    return String.view();
+  }
+};
+
+} // namespace core::utils::string
+
 namespace core::utils {
 
-template< char... first_string_symbols, char... second_string_symbols>
+template< string::fixed_string first_string, string::fixed_string second_string >
 struct meta::Less<
-  cvs::common::ConstexprString< first_string_symbols... >,
-  cvs::common::ConstexprString< second_string_symbols... >
+  string::Constexpr_string< first_string >,
+  string::Constexpr_string< second_string >
 > {
-  static constexpr bool value =
-    cvs::common::ConstexprString< first_string_symbols... >::view()
-    < cvs::common::ConstexprString< second_string_symbols... >::view();
+  static constexpr bool value = first_string.view() < second_string.view();
 };
 
 }
@@ -82,8 +108,8 @@ template <class T>
 concept Named_enum_value_like =
   requires {
     typename T::Enum;
-    CVS_constexpr_string_like< typename T::Name >;
-    std::is_same_v< decltype(T::value), typename T::Enum >;
+    requires CVS_constexpr_string_like< typename T::Name >;
+    requires std::is_same_v< std::remove_const_t< decltype(T::value) >, typename T::Enum >;
   };
 
 template< Named_enum_value_like... Named_values >
@@ -184,18 +210,19 @@ class Enum_with_names_base {
 
   template< bool is_value_by_name >
   static std::optional< Result_type< is_value_by_name > > get_inner(const Result_type< !is_value_by_name > argument) {
-    static std::optional< Map< is_value_by_name > > map;
-    if (!map) {
+    // Thread-safe one-shot initialization via the function-local static guarantee;
+    // a lazy 'if (!map) emplace' would race on concurrent first calls.
+    static const Map< is_value_by_name > map = [] {
       if constexpr (is_value_by_name) {
-        map.template emplace(Map< is_value_by_name >{ { Named_values::Name::view(), Named_values::value } ... } );
+        return Map< is_value_by_name >{ { Named_values::Name::view(), Named_values::value } ... };
       }
       else {
-        map.template emplace(Map< is_value_by_name >{ { Named_values::value, Named_values::Name::view() } ... } );
+        return Map< is_value_by_name >{ { Named_values::value, Named_values::Name::view() } ... };
       }
-    }
+    }();
 
-    const auto find_result = map->find(argument);
-    if (find_result == map->end()) {
+    const auto find_result = map.find(argument);
+    if (find_result == map.end()) {
       return std::nullopt;
     }
 
@@ -210,14 +237,14 @@ class Enum_with_names_base {
  public:
   template< CVS_constexpr_string_like Name >
   static consteval Enum get_value_by_name() {
-    constexpr auto result = get_inner< Named_enum_value< 0, Name >, true >();
+    constexpr auto result = get_inner< Named_enum_value< Enum{}, Name >, true >();
     static_assert(result, "Can't find value by name");
     return *result;
   }
 
   template< Enum value >
   static consteval std::string_view get_name_by_value() {
-    constexpr auto result = get_inner< Named_enum_value< value, CVS_CONSTEXPRSTRING("") >, false >();
+    constexpr auto result = get_inner< Named_enum_value< value, Constexpr_string<""> >, false >();
     static_assert(result, "Can't find name by value");
     return *result;
   }
