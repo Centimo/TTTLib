@@ -147,4 +147,4 @@ class MPSC_queue {
   std::atomic< size_t> _counter;
 };
 
-}  // namespace trantor
+}  // namespace core

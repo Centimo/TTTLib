@@ -2,15 +2,27 @@
 
 #include "utils/general.hpp"
 
-#include <cvs/common/general.hpp>
-
 #include <concepts>
 #include <condition_variable>
 #include <functional>
 #include <thread>
+#include <type_traits>
 
 
 namespace core {
+
+namespace details {
+
+// The executor optionally provides a non-static 'free()' method, called once after
+// the thread joins. It must be a member function (the caller binds &T::free), so a
+// static free() is deliberately rejected.
+template< class T >
+concept Has_free_method = requires(T& object) {
+  { object.free() };
+  requires std::is_member_function_pointer_v< decltype(&T::free) >;
+};
+
+} // namespace details
 
 class Stop_flag {
  public:
@@ -28,11 +40,6 @@ concept Stoppable = std::derived_from<typename std::remove_cvref<T>::type, Stop_
 
 class Thread final {
  public:
-  template< class T >
-  class HasInstanceMethod {
-    CVS_HAS_INSTANCE_METHOD_DEFAULT(free);
-  };
-
   template <Stoppable Executor> requires (!std::is_reference< Executor >::value)
   explicit Thread(
     Executor& executor
@@ -40,7 +47,7 @@ class Thread final {
     : _stop_function(std::bind(&Executor::stop, &executor))
     , _thread(std::make_unique<std::thread>(&Executor::execute, &executor))
   {
-    if constexpr (HasInstanceMethod< Executor >::template free_v<>) {
+    if constexpr (details::Has_free_method< Executor >) {
       _free_function.emplace(std::bind(&Executor::free, &executor));
     }
   }

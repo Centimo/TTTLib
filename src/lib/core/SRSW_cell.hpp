@@ -3,11 +3,12 @@
 #include "utils/general.hpp"
 #include "utils/meta.hpp"
 
-#include <cvs/common/general.hpp>
-
 #include <array>
 #include <atomic>
 #include <cmath>
+#include <concepts>
+#include <functional>
+#include <optional>
 #include <stdexcept>
 #include <thread>
 
@@ -18,9 +19,10 @@ namespace core::rcu {
 
 namespace details {
 
-template< class T >
-class HasStaticMethod {
-  CVS_HAS_STATIC_METHOD_DEFAULT(read);
+// A reader type provides 'static T read(const T&)'.
+template< class Reader, class T >
+concept Has_static_read = requires(const T& value) {
+  { Reader::read(value) } -> std::same_as< T >;
 };
 
 } // namespace details
@@ -48,8 +50,8 @@ template <class T, class Read = void>
 class SRSW_cell {
   static_assert(
     std::is_same_v< Read, void >
-    || details::HasStaticMethod< Read >::template read_v< const T& >,
-    "If ReadFunction type not void, it must provide 'static T read(const T&)`"
+    || details::Has_static_read< Read, T >,
+    "If ReadFunction type not void, it must provide 'static T read(const T&)'"
   );
 
   static constexpr unsigned char _cells_number = 3;
@@ -288,7 +290,7 @@ class SRSW_cell {
       access_kind,
       return Interface< access_kind >(new Get_interface_type< access_kind >(*this));,
       throw std::runtime_error(
-        fmt::format("Interface (kind {}) of SRSW_cell already used", access_kind)
+        fmt::format("Interface (kind {}) of SRSW_cell already used", utils::to_underlying(access_kind))
       );
     )
   }
