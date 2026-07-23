@@ -4,6 +4,7 @@
 #include "string.hpp"
 
 #include <array>
+#include <compare>
 #include <concepts>
 #include <stdexcept>
 #include <type_traits>
@@ -63,11 +64,14 @@ class Enum_array {
 
   // The 'sizeof...(Args) > 1' guard keeps this template from hijacking the copy/move constructor
   // when SIZE == 1 and T has a greedy converting constructor (std::any, std::variant, ...).
+  // Only the single-element form is explicit: there it guards against an unintended T-to-Enum_array
+  // conversion, whereas a multi-element list ({a, b, c}) is unambiguous and stays brace-initializable
+  // like std::array, so it can appear in aggregates and copy-list-initialization.
   template< class... Args>
     requires
       (sizeof...(Args) == SIZE)
       && (sizeof...(Args) > 1 || !(std::same_as< Enum_array, std::remove_cvref_t< Args>> && ...))
-  explicit constexpr Enum_array(Args&&... args) : _data { std::forward< Args>(args)... } {}
+  explicit(SIZE == 1) constexpr Enum_array(Args&&... args) : _data { std::forward< Args>(args)... } {}
 
   // Key known at compile time: validity is proven, so the access needs no check and cannot throw.
   template< Enum key>
@@ -109,6 +113,18 @@ class Enum_array {
 
   constexpr const T& operator[](const Enum key) const noexcept {
     return _data[to_underlying(key)];
+  }
+
+  // Forward to the underlying array. Written as ordinary members (not '= default') so their bodies
+  // instantiate lazily, only where a comparison is actually used: for an element type that cannot be
+  // compared the operators simply never come into existence, whereas a defaulted comparison is
+  // instantiated together with the class and would hard-error inside std::array's own comparison.
+  constexpr bool operator == (const Enum_array& other) const {
+    return _data == other._data;
+  }
+
+  constexpr auto operator <=> (const Enum_array& other) const {
+    return _data <=> other._data;
   }
 
   constexpr auto begin() noexcept {
