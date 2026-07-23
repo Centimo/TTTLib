@@ -233,6 +233,7 @@ class Enum_with_names_base {
   static constexpr auto NAMES =
     core::utils::string::get_array_of_strings< std::tuple< typename Named_values::Name... > >();
   static constexpr auto SIZE = NAMES.size();
+  static constexpr std::array< Enum, SIZE > VALUES = { Named_values::value... };
 
  public:
   template< CVS_constexpr_string_like Name >
