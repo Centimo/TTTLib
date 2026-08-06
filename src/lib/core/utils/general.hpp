@@ -12,6 +12,7 @@
 #include <system_error>
 #include <type_traits>
 #include <tuple>
+#include <utility>
 
 
 namespace core::utils {
@@ -35,6 +36,98 @@ class Optional_reference : public std::optional<std::reference_wrapper<T>> {
 
   T& operator * () const noexcept {
     return this->value().get();
+  }
+};
+
+template< class T>
+  requires std::is_object_v< T> && std::is_nothrow_move_constructible_v< std::remove_const_t< T>>
+class Swappable {
+  using Value = std::remove_const_t< T>;
+  union { Value _value; };   // a union decouples the member's lifetime so it can be rebuilt in place
+
+  // Every read goes through here. After destroy_at + construct_at reuse the storage, the member name
+  // '_value' no longer designates the new object when Value has a const or reference member (which is the
+  // very case this wrapper exists for) — accessing it directly would be undefined. std::launder yields a
+  // pointer to the object actually living there. Construction sites still name '_value' directly: there
+  // it is the initialization target, not a read of a reused slot.
+  constexpr Value& value() noexcept {
+    return *std::launder(std::addressof(_value));
+  }
+
+  constexpr const Value& value() const noexcept {
+    return *std::launder(std::addressof(_value));
+  }
+
+ public:
+  template< class... Arguments>
+    requires std::constructible_from< Value, Arguments...>
+  constexpr explicit Swappable(Arguments&&... arguments)
+    noexcept(std::is_nothrow_constructible_v< Value, Arguments...>)
+    : _value(std::forward< Arguments>(arguments)...)
+  {}
+
+  constexpr Swappable(const Swappable& other) requires std::is_copy_constructible_v< Value>
+    : _value(other.value())
+  {}
+
+  constexpr Swappable(Swappable&& other) noexcept
+    : _value(std::move(other.value()))
+  {}
+
+  constexpr Swappable& operator = (const Swappable& other) requires std::is_copy_constructible_v< Value> {
+    if (this == std::addressof(other)) [[unlikely]] {
+      return *this;
+    }
+
+    Value copy(other.value());                                   // may throw; slot stays intact
+    std::destroy_at(std::addressof(_value));
+    std::construct_at(std::addressof(_value), std::move(copy));   // nothrow (constrained on the class)
+    return *this;
+  }
+
+  constexpr Swappable& operator = (Swappable&& other) noexcept {
+    if (this == std::addressof(other)) [[unlikely]] {
+      return *this;
+    }
+
+    std::destroy_at(std::addressof(_value));
+    std::construct_at(std::addressof(_value), std::move(other.value()));
+    return *this;
+  }
+
+  // Replace the wrapped object with a fresh value. The slot is replaceable even when T is const —
+  // that is the whole point — so these are available regardless of T's constness.
+  constexpr Swappable& operator = (const Value& new_value) requires std::is_copy_constructible_v< Value> {
+    Value copy(new_value);                                       // may throw; slot stays intact
+    std::destroy_at(std::addressof(_value));
+    std::construct_at(std::addressof(_value), std::move(copy));   // nothrow (constrained on the class)
+    return *this;
+  }
+
+  constexpr Swappable& operator = (Value&& new_value) noexcept {
+    std::destroy_at(std::addressof(_value));
+    std::construct_at(std::addressof(_value), std::move(new_value));
+    return *this;
+  }
+
+  constexpr ~Swappable() {
+    std::destroy_at(std::addressof(value()));
+  }
+
+  constexpr T& operator * () noexcept {
+    return value();
+  }
+
+  constexpr const T& operator * () const noexcept {
+    return value();
+  }
+
+  constexpr T* operator -> () noexcept {
+    return std::addressof(value());
+  }
+
+  constexpr const T* operator -> () const noexcept {
+    return std::addressof(value());
   }
 };
 
