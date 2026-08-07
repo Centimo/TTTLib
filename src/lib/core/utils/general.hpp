@@ -2,6 +2,7 @@
 
 #include <atomic>
 #include <chrono>
+#include <compare>
 #include <concepts>
 #include <expected>
 #include <memory>
@@ -128,6 +129,22 @@ class Swappable {
 
   constexpr const T* operator -> () const noexcept {
     return std::addressof(value());
+  }
+
+  // Compare the wrapped values. Written out (not '= default') because a defaulted comparison is deleted
+  // for a class with a union member; the constraints make each operator exist only when Value supports it.
+  constexpr bool operator == (const Swappable& other) const
+    noexcept(noexcept(std::declval< const Value&>() == std::declval< const Value&>()))
+    requires std::equality_comparable< Value>
+  {
+    return value() == other.value();
+  }
+
+  constexpr auto operator <=> (const Swappable& other) const
+    noexcept(noexcept(std::declval< const Value&>() <=> std::declval< const Value&>()))
+    requires std::three_way_comparable< Value>
+  {
+    return value() <=> other.value();
   }
 };
 

@@ -3,6 +3,7 @@
 #include <gtest/gtest.h>
 
 #include <algorithm>
+#include <compare>
 #include <memory>
 #include <stdexcept>
 #include <type_traits>
@@ -68,6 +69,14 @@ static_assert(std::is_same_v< decltype(*std::declval< const Swappable< const Som
 // ---- Swappable stays move-only when Value is move-only ----
 static_assert(!std::is_copy_constructible_v< Swappable< std::unique_ptr< int>>>);
 
+// ---- comparison exists only when Value supports it ----
+static_assert(std::equality_comparable< Swappable< const int>>);
+static_assert(std::three_way_comparable< Swappable< const int>>);
+static_assert(!std::equality_comparable< Swappable< const Some>>);      // Some has no operator==
+static_assert(Swappable< const int>(1) == Swappable< const int>(1));
+static_assert(Swappable< const int>(1) < Swappable< const int>(2));
+static_assert((Swappable< const int>(1) <=> Swappable< const int>(2)) == std::strong_ordering::less);
+
 // ---- constexpr usage: build, move-assign, read ----
 constexpr int make_constexpr_swappable_value() {
   Swappable< const int> a(1);
@@ -77,6 +86,30 @@ constexpr int make_constexpr_swappable_value() {
 }
 
 static_assert(make_constexpr_swappable_value() == 2);
+
+TEST(Swappable, ComparisonForwardsToTheWrappedValue) {
+  const Swappable< const int> one(1);
+  const Swappable< const int> another_one(1);
+  const Swappable< const int> two(2);
+
+  EXPECT_EQ(one, another_one);
+  EXPECT_NE(one, two);
+  EXPECT_LT(one, two);
+  EXPECT_GE(two, one);
+}
+
+// Comparison must reflect the value living in the reused storage after assignment — the reason it goes
+// through the laundered value() rather than the union member by name.
+TEST(Swappable, ComparisonReflectsValueAfterReassignment) {
+  Swappable< const int> value(1);
+
+  value = std::move(Swappable< const int>(2));      // move-assign: destroy_at + construct_at
+  EXPECT_EQ(value, Swappable< const int>(2));
+  EXPECT_GT(value, Swappable< const int>(1));
+
+  value = 5;                                          // value-assignment path, also reconstructs
+  EXPECT_EQ(value, Swappable< const int>(5));
+}
 
 TEST(Swappable, VectorOfConstFieldTypeSortsAndErases) {
   std::vector< Swappable< const Some>> values;
