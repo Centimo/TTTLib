@@ -3,9 +3,13 @@
 #include <gtest/gtest.h>
 
 #include <any>
+#include <array>
+#include <ranges>
+#include <sstream>
 #include <stdexcept>
 #include <string>
 #include <utility>
+#include <vector>
 
 using namespace core::utils;
 using namespace core::utils::string;
@@ -73,6 +77,20 @@ static_assert(noexcept(COLOR_WEIGHTS.at< Color::RED>()));
 static_assert(noexcept(COLOR_WEIGHTS[Color::RED]));
 static_assert(!noexcept(COLOR_WEIGHTS.at(Color::RED)));
 static_assert(COLOR_WEIGHTS.at(Color::GREEN) == 20);
+
+// ---- from_range: positional fill, usable at compile time ----
+constexpr Enum_array< Color, int> FROM_RANGE(std::from_range, std::array< int, 3>{ 4, 5, 6 });
+static_assert(FROM_RANGE[Color::RED] == 4);
+static_assert(FROM_RANGE[Color::GREEN] == 5);
+static_assert(FROM_RANGE[Color::BLUE] == 6);
+
+// A type that is copy-constructible but not assignable (const field): from_range must construct each
+// element, never assign, so it has to work here too.
+struct Boxed {
+  const int value;
+  explicit Boxed(int value) : value(value) {}
+};
+static_assert(!std::is_copy_assignable_v< Boxed>);
 
 TEST(EnumArray, RuntimeReadWrite) {
   Enum_array< Color, std::string> names;
@@ -161,6 +179,70 @@ TEST(EnumArray, CopyConstructionIsNotHijackedByVariadicConstructor) {
 
   ASSERT_TRUE(copy[Single::ONLY].has_value());
   EXPECT_EQ(std::any_cast< int>(copy[Single::ONLY]), 42);
+}
+
+TEST(EnumArray, FromRangeFillsPositionally) {
+  const Enum_array< Color, int> weights(std::from_range, std::vector< int>{ 10, 20, 30 });
+
+  EXPECT_EQ(weights[Color::RED], 10);
+  EXPECT_EQ(weights[Color::GREEN], 20);
+  EXPECT_EQ(weights[Color::BLUE], 30);
+}
+
+TEST(EnumArray, FromRangeAcceptsAnInputRange) {
+  const Enum_array< Color, int> weights(std::from_range, std::views::iota(1, 4));
+
+  EXPECT_EQ(weights[Color::RED], 1);
+  EXPECT_EQ(weights[Color::GREEN], 2);
+  EXPECT_EQ(weights[Color::BLUE], 3);
+}
+
+// istream_view is genuinely single-pass and its iterator's postfix increment returns void, so a '*it++'
+// implementation would not even compile here — this pins the read-then-increment behaviour.
+TEST(EnumArray, FromRangeAcceptsSinglePassInputRange) {
+  std::istringstream stream("1 2 3");
+  const Enum_array< Color, int> weights(std::from_range, std::views::istream< int>(stream));
+
+  EXPECT_EQ(weights[Color::RED], 1);
+  EXPECT_EQ(weights[Color::GREEN], 2);
+  EXPECT_EQ(weights[Color::BLUE], 3);
+}
+
+// Boxed has an explicit ctor from int; from_range must direct-initialize each slot, not copy-initialize.
+TEST(EnumArray, FromRangeConstructsViaExplicitConversion) {
+  const Enum_array< Color, Boxed> boxes(std::from_range, std::vector< int>{ 1, 2, 3 });
+
+  EXPECT_EQ(boxes[Color::RED].value, 1);
+  EXPECT_EQ(boxes[Color::BLUE].value, 3);
+}
+
+// Shade has SIZE == 2, matching from_range's own parameter count — confirm no clash with the variadic ctor.
+TEST(EnumArray, FromRangeResolvesUnambiguouslyAtVariadicArity) {
+  const Enum_array< Shade, int> shades(std::from_range, std::vector< int>{ 7, 8 });
+
+  EXPECT_EQ(shades[Shade::LIGHT], 7);
+  EXPECT_EQ(shades[Shade::DARK], 8);
+}
+
+TEST(EnumArray, FromRangeThrowsWhenTooFewElements) {
+  EXPECT_THROW(
+    (Enum_array< Color, int>(std::from_range, std::vector< int>{ 1, 2 })),
+    std::out_of_range
+  );
+}
+
+TEST(EnumArray, FromRangeThrowsWhenTooManyElements) {
+  EXPECT_THROW(
+    (Enum_array< Color, int>(std::from_range, std::vector< int>{ 1, 2, 3, 4 })),
+    std::out_of_range
+  );
+}
+
+TEST(EnumArray, FromRangeConstructsNonAssignableElements) {
+  const Enum_array< Color, Boxed> boxes(std::from_range, std::vector< Boxed>{ Boxed(1), Boxed(2), Boxed(3) });
+
+  EXPECT_EQ(boxes[Color::RED].value, 1);
+  EXPECT_EQ(boxes[Color::BLUE].value, 3);
 }
 
 TEST(EnumArray, EnumWithNamesStillWorksForSameEnum) {

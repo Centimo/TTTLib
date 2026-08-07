@@ -6,6 +6,7 @@
 #include <array>
 #include <compare>
 #include <concepts>
+#include <ranges>
 #include <stdexcept>
 #include <type_traits>
 #include <utility>
@@ -57,6 +58,35 @@ class Enum_array {
     return !std::cmp_less(index, 0) && std::cmp_less(index, Names::SIZE);
   }
 
+  // Private tag: keeps the delegating constructor below reachable only through the from_range_t
+  // constructor, so it can never enter overload resolution for an external call.
+  struct Range_fill {};
+
+  // Consumes one element from the range, in order. The unused index only expands the pack SIZE times.
+  // Direct-initialization mirrors the constructor's constructible_from constraint (both accept explicit
+  // conversions); read-then-increment stays within what input_iterator guarantees, unlike '*it++'.
+  template< class Iterator, class Sentinel>
+  static constexpr T take_next(Iterator& first, const Sentinel last, const std::size_t /* index */) {
+    if (first == last) {
+      throw std::out_of_range("Enum_array: range has fewer elements than the enum has values");
+    }
+
+    T value(*first);
+    ++first;
+    return value;
+  }
+
+  // Braced-init evaluates its elements left to right, so the shared iterator advances in order across the
+  // pack. Private: reached only through the from_range_t constructor's delegation.
+  template< class Iterator, class Sentinel, std::size_t... indexes>
+  constexpr Enum_array(Range_fill, Iterator first, const Sentinel last, std::index_sequence< indexes...>)
+    : _data { take_next(first, last, indexes)... }
+  {
+    if (first != last) {
+      throw std::out_of_range("Enum_array: range has more elements than the enum has values");
+    }
+  }
+
  public:
   static constexpr std::size_t SIZE = Names::SIZE;
 
@@ -72,6 +102,14 @@ class Enum_array {
       (sizeof...(Args) == SIZE)
       && (sizeof...(Args) > 1 || !(std::same_as< Enum_array, std::remove_cvref_t< Args>> && ...))
   explicit(SIZE == 1) constexpr Enum_array(Args&&... args) : _data { std::forward< Args>(args)... } {}
+
+  // Fill positionally from a range: element i goes to the enumerator with underlying value i. The range
+  // must yield exactly SIZE elements — too few or too many throws, so the array is never left partial.
+  template< std::ranges::input_range Range>
+    requires std::constructible_from< T, std::ranges::range_reference_t< Range>>
+  constexpr Enum_array(std::from_range_t, Range&& range)
+    : Enum_array(Range_fill{}, std::ranges::begin(range), std::ranges::end(range), std::make_index_sequence< SIZE>{})
+  {}
 
   // Key known at compile time: validity is proven, so the access needs no check and cannot throw.
   template< Enum key>
