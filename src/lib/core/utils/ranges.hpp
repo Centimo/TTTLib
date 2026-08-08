@@ -24,6 +24,57 @@ struct Closure : Function, std::ranges::range_adaptor_closure< Closure< Function
   constexpr explicit Closure(Function function) : Function(std::move(function)) {}
 };
 
+template< class Function, class Tuple, std::size_t... INDEXES>
+constexpr bool is_applicable(std::index_sequence< INDEXES...>) {
+  return std::invocable< Function, decltype(std::get< INDEXES>(std::declval< Tuple>()))...>;
+}
+
+// Whether the function can be called with the components of the tuple. std::apply itself is
+// unconstrained, so without this the arity and type check would be deferred to its body: std::invocable
+// would answer true, views::transform would accept the adaptor, and the mismatch would surface as an
+// error inside std::apply rather than as a rejected pipe.
+template< class Function, class Tuple>
+concept Applicable =
+  Tuple_like< Tuple>
+  && is_applicable< Function, Tuple>(
+       std::make_index_sequence< std::tuple_size_v< std::remove_cvref_t< Tuple>>>{});
+
+// Calls the function with the components of a tuple element instead of the element itself. The result
+// type follows the function, references included — the same rule views::transform uses.
+template< class Function>
+class Unpack {
+ public:
+  constexpr explicit Unpack(Function function) : _function(std::move(function)) {}
+
+  template< class Tuple>
+    requires Applicable< const Function&, Tuple>
+  [[nodiscard]] constexpr decltype(auto) operator () (Tuple&& tuple) const {
+    return std::apply(_function, std::forward< Tuple>(tuple));
+  }
+
+  // Mutable callables work in views::transform, so they work here too.
+  template< class Tuple>
+    requires Applicable< Function&, Tuple>
+  [[nodiscard]] constexpr decltype(auto) operator () (Tuple&& tuple) {
+    return std::apply(_function, std::forward< Tuple>(tuple));
+  }
+
+ private:
+  [[no_unique_address]] Function _function;
+};
+
+// The conversion behind `as`: implicit only, so anything needing a static_cast is rejected by the
+// constraint rather than performed silently.
+template< class Target>
+  requires (!std::is_reference_v< Target>)
+class Convert {
+ public:
+  template< std::convertible_to< Target> Source>
+  [[nodiscard]] constexpr Target operator () (Source&& value) const {
+    return std::forward< Source>(value);
+  }
+};
+
 } // namespace details
 
 // Pipe form of std::views::zip: fixes every range but the leftmost one, which the pipe supplies.
@@ -37,6 +88,37 @@ template< std::ranges::viewable_range... Ranges>
 [[nodiscard]] constexpr auto zip_with(Ranges&&... ranges) {
   return details::Closure(
     std::bind_back(std::views::zip, std::views::all(std::forward< Ranges>(ranges))...));
+}
+
+// Named static_cast for pipelines: | transform(cast< std::size_t>). Everything static_cast allows is
+// allowed here — including a pointer downcast, which is unchecked and undefined when the dynamic type is
+// wrong. Reference targets are rejected: converting into one would return a reference to the temporary
+// built inside the call.
+template< class Target>
+  requires (!std::is_reference_v< Target>)
+class Cast {
+ public:
+  template< class Source>
+    requires requires (Source&& value) { static_cast< Target>(std::forward< Source>(value)); }
+  [[nodiscard]] constexpr Target operator () (Source&& value) const {
+    return static_cast< Target>(std::forward< Source>(value));
+  }
+};
+
+template< class Target>
+inline constexpr Cast< Target> cast;
+
+// Conversion step of a chain: | as< std::size_t>. The only difference from cast is explicit versus
+// implicit: an explicit-only conversion (a scoped enum, an explicit constructor) fails to compile here.
+// Narrowing and sign changes are implicit conversions and pass both — cast just makes them visible.
+template< class Target>
+inline constexpr auto as = std::views::transform(details::Convert< Target>{});
+
+// Transform whose function takes the tuple components as separate arguments:
+//   | unpack([](const auto& stride, const auto& size) { ... })
+template< class Function>
+[[nodiscard]] constexpr auto unpack(Function function) {
+  return std::views::transform(details::Unpack< Function>(std::move(function)));
 }
 
 class Multiply {

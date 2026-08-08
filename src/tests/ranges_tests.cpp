@@ -4,8 +4,11 @@
 
 #include <array>
 #include <cstdint>
+#include <limits>
+#include <concepts>
 #include <ranges>
 #include <span>
+#include <string>
 #include <sstream>
 #include <tuple>
 #include <utility>
@@ -18,6 +21,8 @@ namespace {
 
 constexpr std::array< size_t, 3> POSITION{2, 3, 4};
 constexpr std::array< size_t, 3> STRIDES{100, 10, 1};
+
+enum class Scoped : int { One = 1 };
 
 } // namespace
 
@@ -118,6 +123,114 @@ TEST(Ranges, WideningIsASeparateStep) {
 
   EXPECT_EQ(left | zip_with(right) | transform(mul) | sum, 2820130816u);
   EXPECT_EQ(left | zip_with(right) | transform(widen) | transform(mul) | sum, 20000000000ull);
+}
+
+// The arithmetic alone would produce 234 either way (int32_t * size_t promotes), so the element type of
+// the intermediate range is what pins the cast.
+TEST(Ranges, CastCarriesTheChainAcrossTypes) {
+  const std::array< std::int32_t, 3> position{2, 3, 4};
+  const auto widened = position | transform(cast< std::size_t>);
+
+  static_assert(std::same_as< std::ranges::range_value_t< decltype(widened)>, std::size_t>);
+  EXPECT_EQ(widened | zip_with(STRIDES) | transform(mul) | sum, 234u);
+}
+
+TEST(Ranges, CastNarrowsAndChangesSign) {
+  EXPECT_EQ(cast< int>(2.9), 2);
+  EXPECT_EQ(cast< std::size_t>(std::int32_t{-1}), std::numeric_limits< std::size_t>::max());
+
+  static_assert(!std::invocable< decltype(cast< int>), std::string>);
+
+  // A reference Target is rejected by the class constraint itself, so it cannot be probed here: naming
+  // Cast< int&> is a hard error, not a substitution failure.
+}
+
+TEST(Ranges, AsConvertsImplicitly) {
+  const std::array< std::int32_t, 3> position{2, 3, 4};
+  const auto widened = position | as< std::size_t>;
+
+  static_assert(std::same_as< std::ranges::range_value_t< decltype(widened)>, std::size_t>);
+  static_assert(
+    std::same_as< std::ranges::range_value_t< decltype(std::views::iota(1, 4) | as< std::int64_t>)>,
+    std::int64_t>);
+
+  EXPECT_EQ(widened | zip_with(STRIDES) | transform(mul) | sum, 234u);
+}
+
+// The difference between the two, probed on the same range and the same conversion: a scoped enum needs
+// a static_cast, so the cast step forms and the as step does not.
+TEST(Ranges, AsRejectsWhatOnlyACastCanDo) {
+  using Scoped_range = std::array< Scoped, 1>;
+
+  static_assert(std::invocable< decltype(transform(cast< int>)), Scoped_range&>);
+  static_assert(!std::invocable< decltype(as< int>), Scoped_range&>);
+}
+
+TEST(Ranges, UnpackSpreadsComponentsOverArguments) {
+  const std::array< size_t, 3> extra{1, 2, 3};
+
+  EXPECT_EQ(
+    POSITION
+      | zip_with(STRIDES, extra)
+      | unpack([](const auto& first, const auto& second, const auto& third) {
+          return first * second * third;
+        })
+      | sum,
+    272u);
+}
+
+// A mismatched function is rejected by the constraint, not by an error inside std::apply — so invocable
+// gives the right answer and the adaptor never forms.
+TEST(Ranges, UnpackRejectsWhatItCannotCall) {
+  const auto binary = [](size_t first, size_t second) { return first + second; };
+
+  static_assert(!std::invocable< decltype(unpack(binary)), std::array< size_t, 3>&>);
+  static_assert(!std::invocable< decltype(unpack(binary)), decltype(POSITION | zip_with(STRIDES, STRIDES))>);
+  static_assert(std::invocable< decltype(unpack(binary)), decltype(POSITION | zip_with(STRIDES))>);
+}
+
+// views::transform accepts a mutable callable, so unpack does too — the non-const overload is what makes
+// that work.
+TEST(Ranges, UnpackAcceptsAMutableFunction) {
+  size_t calls = 0;
+  auto counting = unpack([&calls](const auto& first, const auto& second) mutable {
+    ++calls;
+    return first * second;
+  });
+
+  EXPECT_EQ(POSITION | zip_with(STRIDES) | counting | sum, 234u);
+  EXPECT_EQ(calls, 3u);
+}
+
+TEST(Ranges, StoredUnpackClosureAppliesToDifferentRanges) {
+  const auto difference = unpack([](const auto& first, const auto& second) { return second - first; });
+  const std::array< size_t, 3> other{1, 1, 1};
+
+  EXPECT_EQ(POSITION | zip_with(STRIDES) | difference | sum, 102u);
+  EXPECT_EQ(other | zip_with(STRIDES) | difference | sum, 108u);
+}
+
+// The shape this file exists for: decode a linear index into coordinates without a single cast or
+// structured binding inside the lambda. The static_asserts pin both conversion steps — drop either one
+// and the element types stop matching, even though the coordinates would come out the same.
+TEST(Ranges, DecodesALinearIndexIntoCoordinates) {
+  const std::array< std::size_t, 3> strides{100, 10, 1};
+  const std::array< std::int32_t, 3> sizes{8, 8, 8};
+  const std::size_t linear_index = 234;
+
+  const auto paired = strides | zip_with(sizes | as< std::size_t>);
+  static_assert(
+    std::same_as< std::ranges::range_value_t< decltype(paired)>, std::tuple< std::size_t, std::size_t>>);
+
+  const auto decoded = paired
+    | unpack([linear_index](const auto& stride, const auto& size) {
+        return linear_index / stride % size;
+      })
+    | transform(cast< std::int32_t>);
+  static_assert(std::same_as< std::ranges::range_value_t< decltype(decoded)>, std::int32_t>);
+
+  // 234 / 100 % 8 == 2, 234 / 10 % 8 == 7, 234 / 1 % 8 == 2
+  EXPECT_EQ(decoded | std::ranges::to< std::vector< std::int32_t>>(), (std::vector< std::int32_t>{2, 7, 2}));
 }
 
 TEST(Ranges, CombineZipsItsArguments) {
