@@ -6,6 +6,7 @@ add_executable(tttlib_tests
     concepts_tests.cpp
     enum_array_tests.cpp
     general_tests.cpp
+    ranges_tests.cpp
 )
 
 # TTTLibrary carries the include path (src/lib) and fmt as PUBLIC usage requirements.

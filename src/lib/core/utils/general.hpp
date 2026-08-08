@@ -297,9 +297,4 @@ template< class T >
 using Outcome_unique_reference = cvs::common::CVSOutcome< core::utils::Unique_reference< T > >;
 */
 
-template<typename... Ranges>
-auto combine(Ranges&&... rngs) {
-  return std::views::zip(std::forward<Ranges>(rngs)...);
-}
-
 } // namespace core::utils
