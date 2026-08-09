@@ -63,15 +63,31 @@ class Unpack {
   [[no_unique_address]] Function _function;
 };
 
-// The conversion behind `as`: implicit only, so anything needing a static_cast is rejected by the
-// constraint rather than performed silently.
+// The conversion behind `cast`: a plain static_cast, so nothing it allows is filtered out here.
+//
+// A reference Target is rejected by both conversions below: converting into one would return a reference
+// to the temporary built inside the call.
+template< class Target>
+  requires (!std::is_reference_v< Target>)
+class Cast {
+ public:
+  template< class Source>
+    requires requires (Source&& value) { static_cast< Target>(std::forward< Source>(value)); }
+  [[nodiscard]] constexpr Target operator () (Source&& value) const {
+    return static_cast< Target>(std::forward< Source>(value));
+  }
+};
+
+// The conversion behind `as`: list-initialization, which is exactly a cast minus the narrowing. Signed
+// to unsigned, wider to narrower and floating to integral all narrow and fail this constraint.
 template< class Target>
   requires (!std::is_reference_v< Target>)
 class Convert {
  public:
-  template< std::convertible_to< Target> Source>
+  template< class Source>
+    requires requires (Source&& value) { Target{std::forward< Source>(value)}; }
   [[nodiscard]] constexpr Target operator () (Source&& value) const {
-    return std::forward< Source>(value);
+    return Target{std::forward< Source>(value)};
   }
 };
 
@@ -90,29 +106,19 @@ template< std::ranges::viewable_range... Ranges>
     std::bind_back(std::views::zip, std::views::all(std::forward< Ranges>(ranges))...));
 }
 
-// Named static_cast for pipelines: | transform(cast< std::size_t>). Everything static_cast allows is
-// allowed here — including a pointer downcast, which is unchecked and undefined when the dynamic type is
-// wrong. Reference targets are rejected: converting into one would return a reference to the temporary
-// built inside the call.
-template< class Target>
-  requires (!std::is_reference_v< Target>)
-class Cast {
- public:
-  template< class Source>
-    requires requires (Source&& value) { static_cast< Target>(std::forward< Source>(value)); }
-  [[nodiscard]] constexpr Target operator () (Source&& value) const {
-    return static_cast< Target>(std::forward< Source>(value));
-  }
-};
-
-template< class Target>
-inline constexpr Cast< Target> cast;
-
-// Conversion step of a chain: | as< std::size_t>. The only difference from cast is explicit versus
-// implicit: an explicit-only conversion (a scoped enum, an explicit constructor) fails to compile here.
-// Narrowing and sign changes are implicit conversions and pass both — cast just makes them visible.
+// Two conversion steps of a chain, differing in what they refuse:
+//
+//   | as< std::int64_t>     value-preserving conversions only; narrowing does not compile
+//   | cast< std::size_t>    whatever static_cast does, narrowing and sign changes included
+//
+// Reach for `as` by default and for `cast` where the loss is intended — the name is then the warning.
+// cast also carries everything else static_cast can do, a pointer downcast among them, which is
+// unchecked and undefined when the dynamic type is wrong.
 template< class Target>
 inline constexpr auto as = std::views::transform(details::Convert< Target>{});
+
+template< class Target>
+inline constexpr auto cast = std::views::transform(details::Cast< Target>{});
 
 // Transform whose function takes the tuple components as separate arguments:
 //   | unpack([](const auto& stride, const auto& size) { ... })

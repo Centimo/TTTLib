@@ -126,27 +126,25 @@ TEST(Ranges, WideningIsASeparateStep) {
 }
 
 // The arithmetic alone would produce 234 either way (int32_t * size_t promotes), so the element type of
-// the intermediate range is what pins the cast.
+// the intermediate range is what pins the conversion.
 TEST(Ranges, CastCarriesTheChainAcrossTypes) {
   const std::array< std::int32_t, 3> position{2, 3, 4};
-  const auto widened = position | transform(cast< std::size_t>);
+  const auto widened = position | cast< std::size_t>;
 
   static_assert(std::same_as< std::ranges::range_value_t< decltype(widened)>, std::size_t>);
   EXPECT_EQ(widened | zip_with(STRIDES) | transform(mul) | sum, 234u);
 }
 
 TEST(Ranges, CastNarrowsAndChangesSign) {
-  EXPECT_EQ(cast< int>(2.9), 2);
-  EXPECT_EQ(cast< std::size_t>(std::int32_t{-1}), std::numeric_limits< std::size_t>::max());
+  const std::array< double, 2> fractions{1.7, 2.9};
+  EXPECT_EQ(fractions | cast< int> | sum, 3);
 
-  static_assert(!std::invocable< decltype(cast< int>), std::string>);
-
-  // A reference Target is rejected by the class constraint itself, so it cannot be probed here: naming
-  // Cast< int&> is a hard error, not a substitution failure.
+  const std::array< std::int32_t, 1> negative{-1};
+  EXPECT_EQ(negative | cast< std::size_t> | sum, std::numeric_limits< std::size_t>::max());
 }
 
-TEST(Ranges, AsConvertsImplicitly) {
-  const std::array< std::int32_t, 3> position{2, 3, 4};
+TEST(Ranges, AsConvertsWithoutLoss) {
+  const std::array< std::uint32_t, 3> position{2, 3, 4};
   const auto widened = position | as< std::size_t>;
 
   static_assert(std::same_as< std::ranges::range_value_t< decltype(widened)>, std::size_t>);
@@ -157,13 +155,21 @@ TEST(Ranges, AsConvertsImplicitly) {
   EXPECT_EQ(widened | zip_with(STRIDES) | transform(mul) | sum, 234u);
 }
 
-// The difference between the two, probed on the same range and the same conversion: a scoped enum needs
-// a static_cast, so the cast step forms and the as step does not.
-TEST(Ranges, AsRejectsWhatOnlyACastCanDo) {
-  using Scoped_range = std::array< Scoped, 1>;
+// The whole difference between the two, probed on the same ranges: as refuses every conversion that
+// loses information, cast performs it. Everything else they accept alike.
+TEST(Ranges, AsRefusesWhatCastPerforms) {
+  static_assert(std::invocable< decltype(cast< std::size_t>), std::array< std::int32_t, 1>&>);
+  static_assert(!std::invocable< decltype(as< std::size_t>), std::array< std::int32_t, 1>&>);
 
-  static_assert(std::invocable< decltype(transform(cast< int>)), Scoped_range&>);
-  static_assert(!std::invocable< decltype(as< int>), Scoped_range&>);
+  static_assert(std::invocable< decltype(cast< int>), std::array< double, 1>&>);
+  static_assert(!std::invocable< decltype(as< int>), std::array< double, 1>&>);
+
+  static_assert(std::invocable< decltype(cast< int>), std::array< Scoped, 1>&>);
+  static_assert(!std::invocable< decltype(as< int>), std::array< Scoped, 1>&>);
+
+  // Value-preserving conversions go through both.
+  static_assert(std::invocable< decltype(cast< std::size_t>), std::array< std::uint32_t, 1>&>);
+  static_assert(std::invocable< decltype(as< std::size_t>), std::array< std::uint32_t, 1>&>);
 }
 
 TEST(Ranges, UnpackSpreadsComponentsOverArguments) {
@@ -218,7 +224,7 @@ TEST(Ranges, DecodesALinearIndexIntoCoordinates) {
   const std::array< std::int32_t, 3> sizes{8, 8, 8};
   const std::size_t linear_index = 234;
 
-  const auto paired = strides | zip_with(sizes | as< std::size_t>);
+  const auto paired = strides | zip_with(sizes | cast< std::size_t>);
   static_assert(
     std::same_as< std::ranges::range_value_t< decltype(paired)>, std::tuple< std::size_t, std::size_t>>);
 
@@ -226,7 +232,7 @@ TEST(Ranges, DecodesALinearIndexIntoCoordinates) {
     | unpack([linear_index](const auto& stride, const auto& size) {
         return linear_index / stride % size;
       })
-    | transform(cast< std::int32_t>);
+    | cast< std::int32_t>;
   static_assert(std::same_as< std::ranges::range_value_t< decltype(decoded)>, std::int32_t>);
 
   // 234 / 100 % 8 == 2, 234 / 10 % 8 == 7, 234 / 1 % 8 == 2
