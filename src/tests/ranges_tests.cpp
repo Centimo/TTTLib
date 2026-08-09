@@ -175,14 +175,13 @@ TEST(Ranges, AsRefusesWhatCastPerforms) {
 TEST(Ranges, UnpackSpreadsComponentsOverArguments) {
   const std::array< size_t, 3> extra{1, 2, 3};
 
-  EXPECT_EQ(
-    POSITION
-      | zip_with(STRIDES, extra)
-      | unpack([](const auto& first, const auto& second, const auto& third) {
-          return first * second * third;
-        })
-      | sum,
-    272u);
+  const auto products = POSITION
+                        | zip_with(STRIDES, extra)
+                        | unpack([](const auto& first, const auto& second, const auto& third) {
+                            return first * second * third;
+                          });
+
+  EXPECT_EQ(products | sum, 272u);
 }
 
 // A mismatched function is rejected by the constraint, not by an error inside std::apply — so invocable
@@ -229,10 +228,10 @@ TEST(Ranges, DecodesALinearIndexIntoCoordinates) {
     std::same_as< std::ranges::range_value_t< decltype(paired)>, std::tuple< std::size_t, std::size_t>>);
 
   const auto decoded = paired
-    | unpack([linear_index](const auto& stride, const auto& size) {
-        return linear_index / stride % size;
-      })
-    | cast< std::int32_t>;
+                       | unpack([linear_index](const auto& stride, const auto& size) {
+                           return linear_index / stride % size;
+                         })
+                       | cast< std::int32_t>;
   static_assert(std::same_as< std::ranges::range_value_t< decltype(decoded)>, std::int32_t>);
 
   // 234 / 100 % 8 == 2, 234 / 10 % 8 == 7, 234 / 1 % 8 == 2
