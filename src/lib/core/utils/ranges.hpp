@@ -63,6 +63,70 @@ class Unpack {
   [[no_unique_address]] Function _function;
 };
 
+// Operations behind the elementwise adaptors. All of them fold to the left, which only matters for the
+// non-associative ones: divide(a, b) over three ranges is (left / a) / b, not left / (a / b).
+//
+// The trailing return type is what keeps them SFINAE-friendly: with a deduced `auto` the fold would be
+// checked inside the body, so a type mismatch (a remainder of doubles) would be a hard error instead of a
+// rejected pipe, and std::invocable would not be answerable at all.
+struct Multiplication {
+  template< class... Values>
+    requires (sizeof...(Values) >= 2)
+  [[nodiscard]] constexpr auto operator () (Values&&... values) const
+    -> decltype((... * std::forward< Values>(values)))
+  {
+    return (... * std::forward< Values>(values));
+  }
+};
+
+struct Division {
+  template< class... Values>
+    requires (sizeof...(Values) >= 2)
+  [[nodiscard]] constexpr auto operator () (Values&&... values) const
+    -> decltype((... / std::forward< Values>(values)))
+  {
+    return (... / std::forward< Values>(values));
+  }
+};
+
+struct Modulo {
+  template< class... Values>
+    requires (sizeof...(Values) >= 2)
+  [[nodiscard]] constexpr auto operator () (Values&&... values) const
+    -> decltype((... % std::forward< Values>(values)))
+  {
+    return (... % std::forward< Values>(values));
+  }
+};
+
+struct Addition {
+  template< class... Values>
+    requires (sizeof...(Values) >= 2)
+  [[nodiscard]] constexpr auto operator () (Values&&... values) const
+    -> decltype((... + std::forward< Values>(values)))
+  {
+    return (... + std::forward< Values>(values));
+  }
+};
+
+struct Subtraction {
+  template< class... Values>
+    requires (sizeof...(Values) >= 2)
+  [[nodiscard]] constexpr auto operator () (Values&&... values) const
+    -> decltype((... - std::forward< Values>(values)))
+  {
+    return (... - std::forward< Values>(values));
+  }
+};
+
+template< class Operation, std::ranges::viewable_range... Ranges>
+  requires (sizeof...(Ranges) >= 1) && std::default_initializable< Operation>
+[[nodiscard]] constexpr auto elementwise(Ranges&&... ranges) {
+  return Closure(std::bind_back(
+    std::bind_front(std::views::zip_transform, Operation{}),
+    std::views::all(std::forward< Ranges>(ranges))...));
+}
+
 // The conversion behind `cast`: a plain static_cast, so nothing it allows is filtered out here.
 //
 // A reference Target is rejected by both conversions below: converting into one would return a reference
@@ -127,17 +191,53 @@ template< class Function>
   return std::views::transform(details::Unpack< Function>(std::move(function)));
 }
 
-class Multiply {
- public:
-  template< Tuple_like Tuple>
-  [[nodiscard]] constexpr auto operator () (Tuple&& tuple) const {
-    static_assert(
-      std::tuple_size_v< std::remove_cvref_t< Tuple>> > 0, "Multiply: an empty tuple has no product");
+// Elementwise arithmetic over several ranges: the pipe supplies the leftmost one, the call fixes the rest.
+//
+//   left | multiply(right)            left[i] * right[i]
+//   left | subtract(first, second)    left[i] - first[i] - second[i]
+//
+// A scalar operand is a range too — std::views::repeat(value) makes one, and zip_transform stops at the
+// shortest, so the infinite side costs nothing:
+//
+//   std::views::repeat(linear_index) | divide(strides) | modulo(sizes)
+//
+// What these do silently, all of it inherited from the arithmetic and from ranges rather than added here:
+// ranges of different lengths are truncated to the shortest; mixed operand types go through the usual
+// arithmetic conversions, so signedness can change without a conversion step; unsigned subtraction wraps
+// around; and because the result is lazy, a division by zero traps where the range is consumed, not where
+// the pipeline is built.
+//
+// Lifetime matches zip_with: an rvalue range moves into an owning_view, an lvalue is captured as a
+// ref_view, and a closure bound to a temporary is move-only, hence single-use.
+template< std::ranges::viewable_range... Ranges>
+  requires (sizeof...(Ranges) >= 1)
+[[nodiscard]] constexpr auto multiply(Ranges&&... ranges) {
+  return details::elementwise< details::Multiplication>(std::forward< Ranges>(ranges)...);
+}
 
-    return std::apply(
-      [](auto&&... components) { return (components * ...); }, std::forward< Tuple>(tuple));
-  }
-};
+template< std::ranges::viewable_range... Ranges>
+  requires (sizeof...(Ranges) >= 1)
+[[nodiscard]] constexpr auto divide(Ranges&&... ranges) {
+  return details::elementwise< details::Division>(std::forward< Ranges>(ranges)...);
+}
+
+template< std::ranges::viewable_range... Ranges>
+  requires (sizeof...(Ranges) >= 1)
+[[nodiscard]] constexpr auto modulo(Ranges&&... ranges) {
+  return details::elementwise< details::Modulo>(std::forward< Ranges>(ranges)...);
+}
+
+template< std::ranges::viewable_range... Ranges>
+  requires (sizeof...(Ranges) >= 1)
+[[nodiscard]] constexpr auto add(Ranges&&... ranges) {
+  return details::elementwise< details::Addition>(std::forward< Ranges>(ranges)...);
+}
+
+template< std::ranges::viewable_range... Ranges>
+  requires (sizeof...(Ranges) >= 1)
+[[nodiscard]] constexpr auto subtract(Ranges&&... ranges) {
+  return details::elementwise< details::Subtraction>(std::forward< Ranges>(ranges)...);
+}
 
 class Sum : public std::ranges::range_adaptor_closure< Sum> {
  public:
@@ -151,7 +251,7 @@ class Sum : public std::ranges::range_adaptor_closure< Sum> {
     // The trade-off is that the rejection cannot be probed with std::invocable.
     if constexpr (Tuple_like< std::ranges::range_value_t< Range>>) {
       static_assert(
-        false, "Sum: elements are tuple-like, not scalars; reduce them first, e.g. | transform(mul)");
+        false, "Sum: elements are tuple-like, not scalars; reduce them first, e.g. | multiply(other)");
     }
     else {
       using Value = std::ranges::range_value_t< Range>;
@@ -160,7 +260,6 @@ class Sum : public std::ranges::range_adaptor_closure< Sum> {
   }
 };
 
-inline constexpr Multiply mul;
 inline constexpr Sum sum;
 
 template<typename... Ranges>
