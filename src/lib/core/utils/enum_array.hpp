@@ -69,8 +69,9 @@ class Enum_array {
   struct Greediness_probe {};
 
   // Consumes one element from the range, in order. The unused index only expands the pack SIZE times.
-  // Direct-initialization mirrors the constructor's constructible_from constraint (both accept explicit
-  // conversions); read-then-increment stays within what input_iterator guarantees, unlike '*it++'.
+  // Parenthesized initialization is the same form the variadic constructor uses, so an element is built
+  // identically through either; read-then-increment stays within what input_iterator guarantees, unlike
+  // '*it++'.
   template< class Iterator, class Sentinel>
   static constexpr T take_next(Iterator& first, const Sentinel last, const std::size_t /* index */) {
     if (first == last) {
@@ -101,13 +102,27 @@ class Enum_array {
   // The 'sizeof...(Args) > 1' guard keeps this template from hijacking the copy/move constructor
   // when SIZE == 1 and T has a greedy converting constructor (std::any, std::variant, ...).
   // Only the single-element form is explicit: there it guards against an unintended T-to-Enum_array
-  // conversion, whereas a multi-element list ({a, b, c}) is unambiguous and stays brace-initializable
-  // like std::array, so it can appear in aggregates and copy-list-initialization.
+  // conversion. A braced list reaches the initializer_list constructor below instead, except for the
+  // element types excluded there, which fall back here.
+  //
+  // Each argument builds its element in place, with no intermediate T to copy or move: the parenthesized
+  // form is a prvalue initializing the array slot directly, and it accepts an explicit constructor, which
+  // copy-initializing the member from the pack would reject.
+  //
+  // The two halves of the constraint differ on purpose. 'T(argument)' is what the member initializer does
+  // and matches take_next, so an element type is built the same way here and through from_range —
+  // std::vector(3) stays a vector of three, rather than the one-element list 'T{3}' would produce.
+  // 'T{argument}' is required in addition purely for its narrowing rules, which the parenthesized form
+  // does not have: without it a double argument would silently truncate into an int element.
   template< class... Args>
     requires
       (sizeof...(Args) == SIZE)
       && (sizeof...(Args) > 1 || !(std::same_as< Enum_array, std::remove_cvref_t< Args>> && ...))
-  explicit(SIZE == 1) constexpr Enum_array(Args&&... args) : _data { std::forward< Args>(args)... } {}
+      && (requires (Args&& argument) {
+            T(std::forward< Args>(argument));
+            T{std::forward< Args>(argument)};
+          } && ...)
+  explicit(SIZE == 1) constexpr Enum_array(Args&&... args) : _data { T(std::forward< Args>(args))... } {}
 
   // In list-initialization an initializer_list constructor is considered before every other candidate, so
   // this is what {a, b, c} resolves to, and the count it carries is a run-time property: a braced list of

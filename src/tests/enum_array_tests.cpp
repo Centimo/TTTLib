@@ -3,9 +3,9 @@
 #include <gtest/gtest.h>
 
 #include <any>
+#include <array>
 #include <concepts>
 #include <initializer_list>
-#include <array>
 #include <memory>
 #include <ranges>
 #include <sstream>
@@ -93,7 +93,41 @@ struct Boxed {
   const int value;
   explicit Boxed(int value) : value(value) {}
 };
+
 static_assert(!std::is_copy_assignable_v< Boxed>);
+
+namespace {
+
+// Counts how an element got into the array. Every test using it resets the counters first.
+struct Tracked {
+  inline static int constructions = 0;
+  inline static int copies = 0;
+  inline static int moves = 0;
+
+  std::string value;
+
+  explicit Tracked(std::string text) : value(std::move(text)) { ++constructions; }
+  Tracked(const Tracked& other) : value(other.value) { ++copies; }
+  Tracked(Tracked&& other) noexcept : value(std::move(other.value)) { ++moves; }
+
+  static void reset() {
+    constructions = 0;
+    copies = 0;
+    moves = 0;
+  }
+};
+
+// Neither copyable nor movable: it can only reach the array if it is built where it lives, so this turns
+// in-place construction from a counter reading into a compile-time requirement.
+struct Immovable {
+  const int value;
+
+  explicit Immovable(int value) : value(value) {}
+  Immovable(const Immovable&) = delete;
+  Immovable(Immovable&&) = delete;
+};
+
+} // namespace
 
 TEST(EnumArray, RuntimeReadWrite) {
   Enum_array< Color, std::string> names;
@@ -294,6 +328,7 @@ TEST(EnumArray, BracedListStillTakesMoveOnlyElements) {
 // its compile-time arity check there.
 static_assert(std::constructible_from< Enum_array< Color, int>, int, int, int>);
 static_assert(!std::constructible_from< Enum_array< Color, int>, int, int>);
+static_assert(!std::constructible_from< Enum_array< Color, int>, int, int, int, int>);
 
 // The element types excluded from the initializer_list constructor, pinned at the constraint rather than
 // through whatever the fallback happens to do.
@@ -334,6 +369,51 @@ TEST(EnumArray, ConstructsFromANamedInitializerList) {
 
   EXPECT_EQ(weights[Color::GREEN], 2);
 }
+
+// The variadic constructor direct-list-initializes each slot, so an explicit element constructor is
+// reachable — copy-initializing the member from the pack would reject it.
+TEST(EnumArray, VariadicConstructsThroughExplicitConversion) {
+  const Enum_array< Color, Boxed> boxes(1, 2, 3);
+
+  EXPECT_EQ(boxes[Color::RED].value, 1);
+  EXPECT_EQ(boxes[Color::BLUE].value, 3);
+}
+
+// Each element is built where it lives: no temporary T is created and then copied or moved into place.
+// The counters show it happened; Immovable below makes it a requirement rather than an observation.
+TEST(EnumArray, VariadicBuildsElementsInPlace) {
+  Tracked::reset();
+
+  const Enum_array< Color, Tracked> tracked(std::string("a"), std::string("b"), std::string("c"));
+
+  EXPECT_EQ(Tracked::constructions, 3);
+  EXPECT_EQ(Tracked::copies, 0);
+  EXPECT_EQ(Tracked::moves, 0);
+  EXPECT_EQ(tracked[Color::GREEN].value, "b");
+}
+
+TEST(EnumArray, VariadicConstructsANeitherCopyableNorMovableElement) {
+  const Enum_array< Color, Immovable> values(1, 2, 3);
+
+  EXPECT_EQ(values[Color::RED].value, 1);
+  EXPECT_EQ(values[Color::BLUE].value, 3);
+}
+
+// The element is built exactly as from_range builds it — parenthesized, so a size argument stays a size
+// and does not turn into a one-element initializer_list.
+TEST(EnumArray, VariadicMatchesFromRangeForInitializerListTypes) {
+  const Enum_array< Color, std::vector< int>> variadic(3, 4, 5);
+  const Enum_array< Color, std::vector< int>> ranged(std::from_range, std::vector< int>{3, 4, 5});
+
+  EXPECT_EQ(variadic[Color::RED].size(), 3u);
+  EXPECT_EQ(variadic[Color::BLUE].size(), 5u);
+  EXPECT_EQ(variadic[Color::GREEN], ranged[Color::GREEN]);
+}
+
+// Narrowing stays rejected: the constraint asks for T{argument} on top of T(argument) for exactly this.
+static_assert(!std::constructible_from< Enum_array< Color, int>, double, double, double>);
+static_assert(std::constructible_from< Enum_array< Color, Tracked>, std::string, std::string, std::string>);
+static_assert(!std::constructible_from< Enum_array< Color, Tracked>, int, int, int>);
 
 TEST(EnumArray, EnumWithNamesStillWorksForSameEnum) {
   EXPECT_EQ(Enum_with_names< Color>::get_name_by_value(Color::GREEN), "GREEN");
