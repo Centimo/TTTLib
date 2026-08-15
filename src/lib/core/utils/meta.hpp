@@ -75,12 +75,24 @@ constexpr auto tuple_to_variadic(std::index_sequence< indexes...>) {
 template< size_t index = 0, class... T > requires (index < std::tuple_size_v< std::tuple< T... > >)
 using Pack_element = std::tuple_element_t< index, std::tuple< T... > >;
 
-template< class T, template< class > class Concept >
+namespace details {
+
+// A struct instead of a lambda call: clang rejects calling a lambda's operator()
+// inside a constraint expression, treating it as an undefined function.
+template< class T, template< class> class Concept, class Indexes>
+struct All_elements_satisfy;
+
+template< class T, template< class> class Concept, std::size_t... indexes>
+struct All_elements_satisfy< T, Concept, std::index_sequence< indexes...>> {
+  static constexpr bool value = (Concept< std::tuple_element_t< indexes, T>>::value && ...);
+};
+
+}
+
+template< class T, template< class> class Concept>
 concept Tuple_of_like =
-  Tuple_like< T >
-  && [] <std::size_t... indexes>(std::index_sequence< indexes... >) consteval -> bool {
-    return (Concept< std::tuple_element_t< indexes, T > >::value && ...);
-  } (std::make_index_sequence< std::tuple_size_v< T > >());
+  Tuple_like< T>
+  && details::All_elements_satisfy< T, Concept, std::make_index_sequence< std::tuple_size_v< T>>>::value;
 
 template< template < class... > class T, class... Test_class >
 concept Predicate_like = std::is_nothrow_convertible_v< decltype(T< Test_class... >::value), bool>;
