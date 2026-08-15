@@ -297,13 +297,19 @@ TEST(EnumArray, InitializerListWorksInCopyListInitialization) {
   const Enum_array< Color, std::string> names = {"red", "green", "blue"};
 
   EXPECT_EQ(names[Color::RED], "red");
+  EXPECT_EQ(names[Color::GREEN], "green");
   EXPECT_EQ(names[Color::BLUE], "blue");
 }
 
 TEST(EnumArray, InitializerListWorksAtCompileTime) {
   constexpr Enum_array< Color, int> weights{1, 2, 3};
 
+  static_assert(weights.at< Color::RED>() == 1);
   static_assert(weights.at< Color::GREEN>() == 2);
+  static_assert(weights.at< Color::BLUE>() == 3);
+
+  EXPECT_EQ(weights[Color::RED], 1);
+  EXPECT_EQ(weights[Color::GREEN], 2);
   EXPECT_EQ(weights[Color::BLUE], 3);
 }
 
@@ -321,6 +327,7 @@ TEST(EnumArray, BracedListStillTakesMoveOnlyElements) {
     std::make_unique< int>(1), std::make_unique< int>(2), std::make_unique< int>(3)};
 
   EXPECT_EQ(*pointers[Color::RED], 1);
+  EXPECT_EQ(*pointers[Color::GREEN], 2);
   EXPECT_EQ(*pointers[Color::BLUE], 3);
 }
 
@@ -344,13 +351,16 @@ TEST(EnumArray, BracedCopyIsNotHijackedForGreedyElementType) {
   const Enum_array< Color, std::any> copy{source};
 
   EXPECT_EQ(std::any_cast< int>(copy[Color::RED]), 1);
+  EXPECT_EQ(std::any_cast< int>(copy[Color::GREEN]), 2);
   EXPECT_EQ(std::any_cast< int>(copy[Color::BLUE]), 3);
 }
 
 TEST(EnumArray, BracedListOfGreedyElementsStillChecksArityAtCompileTime) {
   const Enum_array< Color, std::any> values{std::any(1), std::any(2), std::any(3)};
 
+  EXPECT_EQ(std::any_cast< int>(values[Color::RED]), 1);
   EXPECT_EQ(std::any_cast< int>(values[Color::GREEN]), 2);
+  EXPECT_EQ(std::any_cast< int>(values[Color::BLUE]), 3);
   static_assert(!std::constructible_from< Enum_array< Color, std::any>, std::any, std::any>);
 }
 
@@ -358,6 +368,7 @@ TEST(EnumArray, EmptyBracesStillValueInitialize) {
   const Enum_array< Color, int> weights{};
 
   EXPECT_EQ(weights[Color::RED], 0);
+  EXPECT_EQ(weights[Color::GREEN], 0);
   EXPECT_EQ(weights[Color::BLUE], 0);
 }
 
@@ -367,7 +378,9 @@ TEST(EnumArray, ConstructsFromANamedInitializerList) {
   const std::initializer_list< int> values{1, 2, 3};
   const Enum_array< Color, int> weights(values);
 
+  EXPECT_EQ(weights[Color::RED], 1);
   EXPECT_EQ(weights[Color::GREEN], 2);
+  EXPECT_EQ(weights[Color::BLUE], 3);
 }
 
 // The variadic constructor direct-list-initializes each slot, so an explicit element constructor is
@@ -376,6 +389,7 @@ TEST(EnumArray, VariadicConstructsThroughExplicitConversion) {
   const Enum_array< Color, Boxed> boxes(1, 2, 3);
 
   EXPECT_EQ(boxes[Color::RED].value, 1);
+  EXPECT_EQ(boxes[Color::GREEN].value, 2);
   EXPECT_EQ(boxes[Color::BLUE].value, 3);
 }
 
@@ -389,13 +403,16 @@ TEST(EnumArray, VariadicBuildsElementsInPlace) {
   EXPECT_EQ(Tracked::constructions, 3);
   EXPECT_EQ(Tracked::copies, 0);
   EXPECT_EQ(Tracked::moves, 0);
+  EXPECT_EQ(tracked[Color::RED].value, "a");
   EXPECT_EQ(tracked[Color::GREEN].value, "b");
+  EXPECT_EQ(tracked[Color::BLUE].value, "c");
 }
 
 TEST(EnumArray, VariadicConstructsANeitherCopyableNorMovableElement) {
   const Enum_array< Color, Immovable> values(1, 2, 3);
 
   EXPECT_EQ(values[Color::RED].value, 1);
+  EXPECT_EQ(values[Color::GREEN].value, 2);
   EXPECT_EQ(values[Color::BLUE].value, 3);
 }
 
@@ -406,8 +423,12 @@ TEST(EnumArray, VariadicMatchesFromRangeForInitializerListTypes) {
   const Enum_array< Color, std::vector< int>> ranged(std::from_range, std::vector< int>{3, 4, 5});
 
   EXPECT_EQ(variadic[Color::RED].size(), 3u);
+  EXPECT_EQ(variadic[Color::GREEN].size(), 4u);
   EXPECT_EQ(variadic[Color::BLUE].size(), 5u);
+
+  EXPECT_EQ(variadic[Color::RED], ranged[Color::RED]);
   EXPECT_EQ(variadic[Color::GREEN], ranged[Color::GREEN]);
+  EXPECT_EQ(variadic[Color::BLUE], ranged[Color::BLUE]);
 }
 
 // Narrowing stays rejected: the constraint asks for T{argument} on top of T(argument) for exactly this.
