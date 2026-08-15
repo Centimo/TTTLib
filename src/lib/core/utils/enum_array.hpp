@@ -6,6 +6,7 @@
 #include <array>
 #include <compare>
 #include <concepts>
+#include <initializer_list>
 #include <ranges>
 #include <stdexcept>
 #include <type_traits>
@@ -62,6 +63,11 @@ class Enum_array {
   // constructor, so it can never enter overload resolution for an external call.
   struct Range_fill {};
 
+  // Stands in for "T swallows anything": a type nobody can name, so only a greedy converting constructor
+  // (std::any and the like) accepts it. Asking whether T is constructible from Enum_array itself would
+  // make the constraint depend on itself — that question re-enters this class's own overload set.
+  struct Greediness_probe {};
+
   // Consumes one element from the range, in order. The unused index only expands the pack SIZE times.
   // Direct-initialization mirrors the constructor's constructible_from constraint (both accept explicit
   // conversions); read-then-increment stays within what input_iterator guarantees, unlike '*it++'.
@@ -102,6 +108,23 @@ class Enum_array {
       (sizeof...(Args) == SIZE)
       && (sizeof...(Args) > 1 || !(std::same_as< Enum_array, std::remove_cvref_t< Args>> && ...))
   explicit(SIZE == 1) constexpr Enum_array(Args&&... args) : _data { std::forward< Args>(args)... } {}
+
+  // In list-initialization an initializer_list constructor is considered before every other candidate, so
+  // this is what {a, b, c} resolves to, and the count it carries is a run-time property: a braced list of
+  // the wrong length throws instead of failing to compile, unlike the variadic constructor above.
+  //
+  // Two element types are excluded so that they keep reaching that variadic constructor. A move-only T
+  // cannot come from an initializer_list at all — its elements are const. A T that swallows anything
+  // (std::any and the like) would turn 'Enum_array copy{source}' into a one-element list wrapping the
+  // source, which is the very hijack the self-exclusion above prevents; being considered first, this
+  // constructor would otherwise bypass it.
+  //
+  // Note that elements are copied even from an rvalue: {std::move(a), ...} copies, where the variadic
+  // constructor moves.
+  constexpr Enum_array(const std::initializer_list< T> values)
+    requires std::copy_constructible< T> && (!std::constructible_from< T, Greediness_probe>)
+    : Enum_array(std::from_range, values)
+  {}
 
   // Fill positionally from a range: element i goes to the enumerator with underlying value i. The range
   // must yield exactly SIZE elements — too few or too many throws, so the array is never left partial.

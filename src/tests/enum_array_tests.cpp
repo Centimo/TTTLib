@@ -3,7 +3,10 @@
 #include <gtest/gtest.h>
 
 #include <any>
+#include <concepts>
+#include <initializer_list>
 #include <array>
+#include <memory>
 #include <ranges>
 #include <sstream>
 #include <stdexcept>
@@ -171,14 +174,17 @@ TEST(EnumArray, ValueCastFromArbitraryIntegerThrowsFromCheckedAccess) {
 
 // A greedy converting T (std::any) plus SIZE == 1 makes the variadic constructor
 // call-compatible with copying: without a guard it wraps the source array instead of copying it.
+// Both syntaxes matter: parentheses go to the variadic constructor, braces to the initializer_list one.
 TEST(EnumArray, CopyConstructionIsNotHijackedByVariadicConstructor) {
   Enum_array< Single, std::any> source;
   source[Single::ONLY] = 42;
 
-  Enum_array< Single, std::any> copy(source);
+  const Enum_array< Single, std::any> copy(source);
+  const Enum_array< Single, std::any> braced_copy{source};
 
   ASSERT_TRUE(copy[Single::ONLY].has_value());
   EXPECT_EQ(std::any_cast< int>(copy[Single::ONLY]), 42);
+  EXPECT_EQ(std::any_cast< int>(braced_copy[Single::ONLY]), 42);
 }
 
 TEST(EnumArray, FromRangeFillsPositionally) {
@@ -243,6 +249,90 @@ TEST(EnumArray, FromRangeConstructsNonAssignableElements) {
 
   EXPECT_EQ(boxes[Color::RED].value, 1);
   EXPECT_EQ(boxes[Color::BLUE].value, 3);
+}
+
+TEST(EnumArray, InitializerListFillsPositionally) {
+  const Enum_array< Color, int> weights{1, 2, 3};
+
+  EXPECT_EQ(weights[Color::RED], 1);
+  EXPECT_EQ(weights[Color::GREEN], 2);
+  EXPECT_EQ(weights[Color::BLUE], 3);
+}
+
+TEST(EnumArray, InitializerListWorksInCopyListInitialization) {
+  const Enum_array< Color, std::string> names = {"red", "green", "blue"};
+
+  EXPECT_EQ(names[Color::RED], "red");
+  EXPECT_EQ(names[Color::BLUE], "blue");
+}
+
+TEST(EnumArray, InitializerListWorksAtCompileTime) {
+  constexpr Enum_array< Color, int> weights{1, 2, 3};
+
+  static_assert(weights.at< Color::GREEN>() == 2);
+  EXPECT_EQ(weights[Color::BLUE], 3);
+}
+
+// The count moved from the constraint to run time: a braced list of the wrong length used to be a
+// compile error and is now an exception, because an initializer_list does not carry its size in the type.
+TEST(EnumArray, InitializerListThrowsOnWrongLength) {
+  EXPECT_THROW((Enum_array< Color, int>{1, 2}), std::out_of_range);
+  EXPECT_THROW((Enum_array< Color, int>{1, 2, 3, 4}), std::out_of_range);
+}
+
+// A move-only element type fails the initializer_list constraint, so a braced list falls back to the
+// variadic constructor instead of failing to compile.
+TEST(EnumArray, BracedListStillTakesMoveOnlyElements) {
+  Enum_array< Color, std::unique_ptr< int>> pointers{
+    std::make_unique< int>(1), std::make_unique< int>(2), std::make_unique< int>(3)};
+
+  EXPECT_EQ(*pointers[Color::RED], 1);
+  EXPECT_EQ(*pointers[Color::BLUE], 3);
+}
+
+// Parenthesized construction bypasses list-initialization entirely, so the variadic constructor keeps
+// its compile-time arity check there.
+static_assert(std::constructible_from< Enum_array< Color, int>, int, int, int>);
+static_assert(!std::constructible_from< Enum_array< Color, int>, int, int>);
+
+// The element types excluded from the initializer_list constructor, pinned at the constraint rather than
+// through whatever the fallback happens to do.
+static_assert(std::constructible_from< Enum_array< Color, int>, std::initializer_list< int>>);
+static_assert(!std::constructible_from<
+  Enum_array< Color, std::unique_ptr< int>>, std::initializer_list< std::unique_ptr< int>>>);
+static_assert(!std::constructible_from< Enum_array< Color, std::any>, std::initializer_list< std::any>>);
+
+// A braced copy must stay a copy for a greedy element type: the initializer_list constructor is
+// considered first and would otherwise wrap the source in a one-element list.
+TEST(EnumArray, BracedCopyIsNotHijackedForGreedyElementType) {
+  const Enum_array< Color, std::any> source(std::any(1), std::any(2), std::any(3));
+  const Enum_array< Color, std::any> copy{source};
+
+  EXPECT_EQ(std::any_cast< int>(copy[Color::RED]), 1);
+  EXPECT_EQ(std::any_cast< int>(copy[Color::BLUE]), 3);
+}
+
+TEST(EnumArray, BracedListOfGreedyElementsStillChecksArityAtCompileTime) {
+  const Enum_array< Color, std::any> values{std::any(1), std::any(2), std::any(3)};
+
+  EXPECT_EQ(std::any_cast< int>(values[Color::GREEN]), 2);
+  static_assert(!std::constructible_from< Enum_array< Color, std::any>, std::any, std::any>);
+}
+
+TEST(EnumArray, EmptyBracesStillValueInitialize) {
+  const Enum_array< Color, int> weights{};
+
+  EXPECT_EQ(weights[Color::RED], 0);
+  EXPECT_EQ(weights[Color::BLUE], 0);
+}
+
+// The one form only the initializer_list constructor can take: a named list, which no variadic pack
+// matches.
+TEST(EnumArray, ConstructsFromANamedInitializerList) {
+  const std::initializer_list< int> values{1, 2, 3};
+  const Enum_array< Color, int> weights(values);
+
+  EXPECT_EQ(weights[Color::GREEN], 2);
 }
 
 TEST(EnumArray, EnumWithNamesStillWorksForSameEnum) {
