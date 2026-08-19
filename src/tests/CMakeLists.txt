@@ -5,6 +5,7 @@ add_executable(tttlib_tests
     string_tests.cpp
     concepts_tests.cpp
     enum_array_tests.cpp
+    enum_tuple_tests.cpp
     general_tests.cpp
     ranges_tests.cpp
 )
