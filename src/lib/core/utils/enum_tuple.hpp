@@ -208,6 +208,57 @@ class Enum_tuple {
   constexpr auto operator <=> (const Enum_tuple& other) const {
     return _data <=> other._data;
   }
+
+  // Tuple protocol, in enum order: index i is the element of the enumerator with underlying value i. It is
+  // what structured bindings and anything else reaching elements by position need; the keys do not survive
+  // it, so at< key>() stays the way to say which element is meant.
+  //
+  // Hidden friends: found by argument-dependent lookup only, which is exactly how both structured bindings
+  // and an unqualified 'get< index>(tuple)' look the name up, and they reach _data without opening it to
+  // anyone else. std::apply stays out of reach whatever we do here - it is specified to call std::get,
+  // which cannot be extended for a program-defined type; for_each() covers what it would have been used for.
+  template< std::size_t index> requires (index < sizeof...(T))
+  friend constexpr std::tuple_element_t< index, Tuple>& get(Enum_tuple& tuple) noexcept {
+    return std::get< index>(tuple._data);
+  }
+
+  template< std::size_t index> requires (index < sizeof...(T))
+  friend constexpr const std::tuple_element_t< index, Tuple>& get(const Enum_tuple& tuple) noexcept {
+    return std::get< index>(tuple._data);
+  }
+
+  template< std::size_t index> requires (index < sizeof...(T))
+  friend constexpr std::tuple_element_t< index, Tuple>&& get(Enum_tuple&& tuple) noexcept {
+    return std::get< index>(std::move(tuple._data));
+  }
+
+  template< std::size_t index> requires (index < sizeof...(T))
+  friend constexpr const std::tuple_element_t< index, Tuple>&& get(const Enum_tuple&& tuple) noexcept {
+    return std::get< index>(std::move(tuple._data));
+  }
 };
 
 } // namespace core::utils
+
+namespace std {
+
+template< core::utils::Enum_with_names_like Enum, class... T>
+struct tuple_size< core::utils::Enum_tuple< Enum, T...>> : integral_constant< size_t, sizeof...(T)> {};
+
+// Split into a constrained specialization and a plain one for the same reason details::Enum_tuple_element
+// is: forming the index anyway would answer an out-of-range one with std::tuple's own assertion rather
+// than with a message naming this container.
+template< size_t index, core::utils::Enum_with_names_like Enum, class... T>
+struct tuple_element< index, core::utils::Enum_tuple< Enum, T...>> {
+  static_assert(
+    core::utils::meta::ALWAYS_FALSE< tuple< T...>>,
+    "Enum_tuple: element index is out of range"
+  );
+};
+
+template< size_t index, core::utils::Enum_with_names_like Enum, class... T> requires (index < sizeof...(T))
+struct tuple_element< index, core::utils::Enum_tuple< Enum, T...>> {
+  using type = tuple_element_t< index, tuple< T...>>;
+};
+
+} // namespace std

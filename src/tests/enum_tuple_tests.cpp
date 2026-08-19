@@ -1,5 +1,6 @@
 #include "core/utils/enum_array.hpp"
 #include "core/utils/enum_tuple.hpp"
+#include "core/utils/meta.hpp"
 
 #include <gtest/gtest.h>
 
@@ -8,6 +9,7 @@
 #include <memory>
 #include <stdexcept>
 #include <string>
+#include <tuple>
 #include <type_traits>
 #include <utility>
 #include <vector>
@@ -97,6 +99,22 @@ static_assert(!std::constructible_from< Coordinates, const char*, double, char>)
 static_assert(std::constructible_from< Enum_tuple< Only_slot, int>, int>);
 static_assert(!std::convertible_to< int, Enum_tuple< Only_slot, int>>);
 static_assert(!std::constructible_from< Enum_tuple< Only_slot, int>, double>);
+
+// ---- tuple protocol: positions in enum order, keys not carried over ----
+static_assert(std::tuple_size_v< Payload> == 3);
+static_assert(std::tuple_size_v< Coordinates> == 3);
+static_assert(std::same_as< std::tuple_element_t< 0, Payload>, int>);
+static_assert(std::same_as< std::tuple_element_t< 1, Payload>, std::string>);
+static_assert(std::same_as< std::tuple_element_t< 2, Payload>, std::vector< double>>);
+static_assert(meta::Tuple_like< Payload>);
+static_assert(get< 0>(COORDINATES) == 1);
+static_assert(get< 1>(COORDINATES) == 2.5);
+static_assert(get< 2>(COORDINATES) == 'z');
+
+static_assert(std::same_as< decltype(get< 1>(std::declval< Payload&>())), std::string&>);
+static_assert(std::same_as< decltype(get< 1>(std::declval< const Payload&>())), const std::string&>);
+static_assert(std::same_as< decltype(get< 1>(std::declval< Payload>())), std::string&&>);
+static_assert(std::same_as< decltype(get< 1>(std::declval< const Payload>())), const std::string&&>);
 
 // Copying the container is the implicit copy constructor's job at every size, not the variadic one's.
 static_assert(std::copy_constructible< Coordinates>);
@@ -353,6 +371,56 @@ TEST(EnumTuple, CopyAndMoveTheWholeContainer) {
   EXPECT_EQ(*moved.at< Axis::X>(), 3);
   EXPECT_EQ(moved.at< Axis::Y>(), "text");
   EXPECT_EQ(moved.at< Axis::Z>(), 'c');
+}
+
+TEST(EnumTuple, StructuredBindingsWalkTheElementsInEnumOrder) {
+  Payload payload(42, "text", std::vector< double>{ 1.0, 2.0 });
+  auto& [index, label, weights] = payload;
+
+  EXPECT_EQ(index, 42);
+  EXPECT_EQ(label, "text");
+  EXPECT_EQ(weights.size(), 2u);
+
+  // The names bind to the elements themselves, not to copies of them.
+  index = 7;
+  label += "!";
+  weights.clear();
+
+  EXPECT_EQ(payload.at< Field::INDEX>(), 7);
+  EXPECT_EQ(payload.at< Field::LABEL>(), "text!");
+  EXPECT_TRUE(payload.at< Field::WEIGHTS>().empty());
+}
+
+TEST(EnumTuple, StructuredBindingsFollowEnumOrderAndNotDeclarationOrder) {
+  // Enum_with_names< Axis> declares Z, X, Y; the bindings still come out as X, Y, Z.
+  const Coordinates coordinates(1, 2.5, 'z');
+  const auto& [x, y, z] = coordinates;
+
+  EXPECT_EQ(x, 1);
+  EXPECT_EQ(y, 2.5);
+  EXPECT_EQ(z, 'z');
+}
+
+TEST(EnumTuple, StructuredBindingsOfAConstContainerAreConst) {
+  const Payload payload(42, "text", std::vector< double>{ 1.0 });
+  const auto& [index, label, weights] = payload;
+
+  static_assert(std::same_as< decltype(index), const int>);
+  static_assert(std::same_as< decltype(label), const std::string>);
+  static_assert(std::same_as< decltype(weights), const std::vector< double>>);
+
+  EXPECT_EQ(index, 42);
+  EXPECT_EQ(label, "text");
+  EXPECT_EQ(weights, (std::vector< double>{ 1.0 }));
+}
+
+TEST(EnumTuple, GetMovesOutOfAnRvalueContainer) {
+  Enum_tuple< Axis, std::unique_ptr< int>, std::string, char> tuple(std::make_unique< int>(3), "text", 'c');
+  const std::unique_ptr< int> taken = get< 0>(std::move(tuple));
+
+  ASSERT_TRUE(taken);
+  EXPECT_EQ(*taken, 3);
+  EXPECT_FALSE(tuple.at< Axis::X>());
 }
 
 TEST(EnumTuple, SharesTheEnumDescriptionWithEnumArray) {
