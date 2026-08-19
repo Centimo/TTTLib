@@ -1,5 +1,6 @@
 #pragma once
 
+#include "enum.hpp"
 #include "general.hpp"
 #include "string.hpp"
 
@@ -15,33 +16,6 @@
 
 namespace core::utils {
 
-template< class Enum>
-concept Enum_with_names_like =
-  std::is_enum_v< Enum> &&
-  requires {
-    { string::Enum_with_names< Enum>::SIZE } -> std::convertible_to< std::size_t>;
-    { string::Enum_with_names< Enum>::VALUES[0] } -> std::convertible_to< Enum>;
-  };
-
-namespace details {
-
-// Uniqueness of VALUES is already guaranteed by Enum_with_names_base (Sort_by_value duplicate check),
-// so range [0, SIZE) plus uniqueness implies VALUES is a permutation of 0..SIZE-1, i.e. a dense enum.
-template< Enum_with_names_like Enum>
-consteval bool is_dense_enum() {
-  using Names = string::Enum_with_names< Enum>;
-  for (const Enum value : Names::VALUES) {
-    const auto underlying_value = to_underlying(value);
-    if (std::cmp_less(underlying_value, 0) || std::cmp_greater_equal(underlying_value, Names::SIZE)) {
-      return false;
-    }
-  }
-
-  return true;
-}
-
-} // namespace details
-
 template< Enum_with_names_like Enum, class T>
 class Enum_array {
   using Names = string::Enum_with_names< Enum>;
@@ -51,13 +25,6 @@ class Enum_array {
   );
 
   std::array< T, Names::SIZE> _data {};
-
-  // Density makes this equivalent to "key is one of the declared enumerators": the declared values are
-  // unique and SIZE of them fit in [0, SIZE), so they are exactly 0..SIZE-1 and nothing else can land there.
-  static constexpr bool is_valid_key(const Enum key) noexcept {
-    const auto index = to_underlying(key);
-    return !std::cmp_less(index, 0) && std::cmp_less(index, Names::SIZE);
-  }
 
   // Private tag: keeps the delegating constructor below reachable only through the from_range_t
   // constructor, so it can never enter overload resolution for an external call.
@@ -152,13 +119,13 @@ class Enum_array {
   // Key known at compile time: validity is proven, so the access needs no check and cannot throw.
   template< Enum key>
   constexpr T& at() noexcept {
-    static_assert(is_valid_key(key), "Enum value is not declared in the Enum_with_names specialization");
+    static_assert(is_declared_enumerator(key), "Enum value is not declared in the Enum_with_names specialization");
     return _data[to_underlying(key)];
   }
 
   template< Enum key>
   constexpr const T& at() const noexcept {
-    static_assert(is_valid_key(key), "Enum value is not declared in the Enum_with_names specialization");
+    static_assert(is_declared_enumerator(key), "Enum value is not declared in the Enum_with_names specialization");
     return _data[to_underlying(key)];
   }
 
@@ -166,7 +133,7 @@ class Enum_array {
   // be cast from an arbitrary integer, or be an enumerator added to the enum but never declared in
   // Enum_with_names.
   constexpr T& at(const Enum key) {
-    if (!is_valid_key(key)) {
+    if (!is_declared_enumerator(key)) {
       throw std::out_of_range("Enum_array: enum value is not a declared enumerator");
     }
 
@@ -174,7 +141,7 @@ class Enum_array {
   }
 
   constexpr const T& at(const Enum key) const {
-    if (!is_valid_key(key)) {
+    if (!is_declared_enumerator(key)) {
       throw std::out_of_range("Enum_array: enum value is not a declared enumerator");
     }
 
