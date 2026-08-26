@@ -1,10 +1,12 @@
 #pragma once
 
 #include "general.hpp"
+#include "meta.hpp"
 #include "string.hpp"
 
 #include <concepts>
 #include <cstddef>
+#include <tuple>
 #include <type_traits>
 #include <utility>
 
@@ -48,5 +50,28 @@ constexpr bool is_declared_enumerator(const Enum value) noexcept {
   const auto index = to_underlying(value);
   return !std::cmp_less(index, 0) && std::cmp_less(index, string::Enum_with_names< Enum>::SIZE);
 }
+
+namespace details {
+
+// Maps a key onto the type standing at its position in Types, for every container that lays one type per
+// enumerator. A struct rather than a constrained alias: it can carry the static_assert, so a key that is
+// not a declared enumerator is reported as such instead of as std::tuple_element's own out-of-range
+// failure. The valid case is a constrained specialization, not a static_assert next to the alias: an index
+// outside the list would otherwise still be formed after the assertion had fired, adding that very failure
+// back on top.
+template< class Types, Enum_with_names_like Enum, Enum key>
+struct Enum_element {
+  static_assert(
+    meta::ALWAYS_FALSE< Types>,
+    "Enum value is not declared in the Enum_with_names specialization"
+  );
+};
+
+template< class Types, Enum_with_names_like Enum, Enum key> requires (is_declared_enumerator(key))
+struct Enum_element< Types, Enum, key> {
+  using type = std::tuple_element_t< static_cast< std::size_t>(to_underlying(key)), Types>;
+};
+
+} // namespace details
 
 } // namespace core::utils

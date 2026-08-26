@@ -2,7 +2,6 @@
 
 #include "enum.hpp"
 #include "general.hpp"
-#include "meta.hpp"
 #include "string.hpp"
 
 #include <array>
@@ -17,27 +16,6 @@
 
 
 namespace core::utils {
-
-namespace details {
-
-// A struct rather than a constrained alias: it can carry the static_assert, so a key that is not a declared
-// enumerator is reported as such instead of as std::tuple_element's own out-of-range failure. The valid
-// case is a constrained specialization, not a static_assert next to the alias: an index outside the tuple
-// would otherwise still be formed after the assertion had fired, adding that very failure back on top.
-template< class Tuple, Enum_with_names_like Enum, Enum key>
-struct Enum_tuple_element {
-  static_assert(
-    meta::ALWAYS_FALSE< Tuple>,
-    "Enum value is not declared in the Enum_with_names specialization"
-  );
-};
-
-template< class Tuple, Enum_with_names_like Enum, Enum key> requires (is_declared_enumerator(key))
-struct Enum_tuple_element< Tuple, Enum, key> {
-  using type = std::tuple_element_t< static_cast< std::size_t>(to_underlying(key)), Tuple>;
-};
-
-} // namespace details
 
 // One type per enumerator, positionally: type i belongs to the enumerator whose underlying value is i —
 // the rule by which Enum_array fills its elements, applied to the types themselves.
@@ -112,7 +90,7 @@ class Enum_tuple {
 
   // Part of the interface: at< key>() returns it, and a caller needs to be able to name it.
   template< Enum key>
-  using Element = typename details::Enum_tuple_element< Tuple, Enum, key>::type;
+  using Element = typename details::Enum_element< Tuple, Enum, key>::type;
 
   constexpr Enum_tuple() = default;
 
