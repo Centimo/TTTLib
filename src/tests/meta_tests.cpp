@@ -3,7 +3,10 @@
 #include <gtest/gtest.h>
 
 #include <tuple>
+#include <optional>
 #include <type_traits>
+#include <variant>
+#include <vector>
 
 namespace meta = core::utils::meta;
 
@@ -34,6 +37,57 @@ static_assert(std::is_same_v< meta::Pack_element< 2, int, char, double >, double
 static_assert(std::is_same_v<
   meta::Make_subtuple< std::tuple< Tag<0>, Tag<1>, Tag<2>, Tag<3> >, 1, 3 >::type,
   std::tuple< Tag<1>, Tag<2> > >);
+
+// ---- From ----
+static_assert(std::is_same_v< meta::From< std::tuple< int, char>>::To< std::variant>, std::variant< int, char>>);
+static_assert(std::is_same_v< meta::From< std::variant< int, char>>::To< std::tuple>, std::tuple< int, char>>);
+static_assert(std::is_same_v< meta::From< std::tuple<>>::To< std::tuple>, std::tuple<>>);
+
+// ---- Transform ----
+template< class T> struct Wrapper {};
+
+static_assert(
+  std::is_same_v<
+    meta::Transform< int, char>::Apply< Wrapper>::To< std::tuple>,
+    std::tuple< Wrapper< int>, Wrapper< char>>
+  >
+);
+
+// A template with defaulted parameters beyond the first is applied to one type just the same.
+static_assert(
+  std::is_same_v<
+    meta::Transform< int, char>::Apply< std::vector>::To< std::tuple>,
+    std::tuple< std::vector< int>, std::vector< char>>
+  >
+);
+
+// The template forming the result is named only by To, and is unrelated to what was applied.
+static_assert(
+  std::is_same_v<
+    meta::Transform< int, char>::Apply< Wrapper>::To< std::variant>,
+    std::variant< Wrapper< int>, Wrapper< char>>
+  >
+);
+
+// Applying nothing is allowed: To alone turns the pack into a template.
+static_assert(std::is_same_v< meta::Transform< int, char>::To< std::tuple>, std::tuple< int, char>>);
+static_assert(std::is_same_v< meta::Transform<>::Apply< Wrapper>::To< std::tuple>, std::tuple<>>);
+
+// Applications chain, since each one gives back a Transform.
+static_assert(
+  std::is_same_v<
+    meta::Transform< int, char>::Apply< Wrapper>::Apply< std::optional>::To< std::tuple>,
+    std::tuple< std::optional< Wrapper< int>>, std::optional< Wrapper< char>>>
+  >
+);
+
+// A list that already exists enters the same chain through From.
+static_assert(
+  std::is_same_v<
+    meta::From< std::tuple< int, char>>::Apply< Wrapper>::To< std::variant>,
+    std::variant< Wrapper< int>, Wrapper< char>>
+  >
+);
 
 // ---- Filter_types_list ----
 template< class T > struct Is_even { static constexpr bool value = (T::rank % 2 == 0); };

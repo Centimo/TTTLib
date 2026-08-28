@@ -75,6 +75,39 @@ constexpr auto tuple_to_variadic(std::index_sequence< indexes...>) {
 template< size_t index = 0, class... T > requires (index < std::tuple_size_v< std::tuple< T... > >)
 using Pack_element = std::tuple_element_t< index, std::tuple< T... > >;
 
+// A pack of types carried through steps that are named separately:
+// 'Transform< int, char>::Apply< std::optional>::To< std::tuple>' is
+// 'std::tuple< std::optional< int>, std::optional< char>>'. Apply gives back another Transform over the
+// wrapped types, so applications chain, and nothing is formed until To names the template to form it with.
+template< class... T>
+struct Transform {
+  template< template< class...> class Function>
+  using Apply = Transform< Function< T>...>;
+
+  template< template< class...> class List>
+  using To = List< T...>;
+};
+
+namespace details {
+
+template< class List>
+struct From {
+  static_assert(ALWAYS_FALSE< List>, "From expects a specialization of a template to take the types from");
+};
+
+template< template< class...> class List_template, class... T>
+struct From< List_template< T...>> {
+  using type = Transform< T...>;
+};
+
+} // namespace details
+
+// The way into that chain for a list of types that already exists:
+// 'From< std::tuple< int, char>>::To< std::variant>' is 'std::variant< int, char>'. A list cannot expand
+// itself where it is used - a pack is unpacked only by a template that matched it - and this is the match.
+template< class List>
+using From = typename details::From< List>::type;
+
 namespace details {
 
 // A struct instead of a lambda call: clang rejects calling a lambda's operator()
