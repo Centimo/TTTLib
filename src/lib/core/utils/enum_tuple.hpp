@@ -35,6 +35,10 @@ class Enum_tuple {
 
   Tuple _data {};
 
+  // The key an element belongs to, as the compile-time constant the functor of for_each() receives.
+  template< std::size_t index>
+  using Key_constant = std::integral_constant< Enum, static_cast< Enum>(index)>;
+
   // Shared by the const and the non-const visit: Tuple_reference carries the constness of the caller.
   // The jump table costs one indirect call regardless of SIZE, where a chain of comparisons would grow
   // with it.
@@ -74,15 +78,11 @@ class Enum_tuple {
   template< class Tuple_reference, class Functor, std::size_t... indexes>
   static constexpr void for_each_inner(Tuple_reference& data, Functor& functor, std::index_sequence< indexes...>) {
     static_assert(
-      (std::invocable<
-         Functor&,
-         decltype(std::get< indexes>(data)),
-         std::integral_constant< Enum, static_cast< Enum>(indexes)>
-       > && ...),
+      (std::invocable< Functor&, decltype(std::get< indexes>(data)), Key_constant< indexes>> && ...),
       "Enum_tuple::for_each requires the functor to accept every element together with its key"
     );
 
-    (std::invoke(functor, std::get< indexes>(data), std::integral_constant< Enum, static_cast< Enum>(indexes)>{}), ...);
+    (std::invoke(functor, std::get< indexes>(data), Key_constant< indexes>{}), ...);
   }
 
  public:

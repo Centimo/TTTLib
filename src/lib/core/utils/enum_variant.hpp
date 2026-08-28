@@ -79,6 +79,18 @@ class Enum_variant {
     return static_cast< std::size_t>(to_underlying(key));
   }
 
+  // The key an alternative belongs to, as the compile-time constant the functor of visit() receives.
+  template< std::size_t index>
+  using Key_constant = std::integral_constant< Enum, static_cast< Enum>(index)>;
+
+  // What the functor gives back for one alternative: the element with the caller's constness, plus its key.
+  template< class Variant_reference, class Functor, std::size_t index>
+  using Visit_result = std::invoke_result_t<
+    Functor,
+    decltype(std::get< index>(std::declval< Variant_reference&>())),
+    Key_constant< index>
+  >;
+
   // Shared by the const and the non-const visit: Variant_reference carries the constness of the caller.
   // Indexing is by the alternative that is actually alive, so std::get on it cannot throw. The jump table
   // costs one indirect call regardless of SIZE, where a chain of comparisons would grow with it.
@@ -90,20 +102,9 @@ class Enum_variant {
   ) {
     // An assertion rather than a constraint on visit(): it names the actual mismatch, where a constraint
     // would only report that the call does not match.
-    using Result = std::invoke_result_t<
-      Functor,
-      decltype(std::get< 0>(data)),
-      std::integral_constant< Enum, static_cast< Enum>(0)>
-    >;
+    using Result = Visit_result< Variant_reference, Functor, 0>;
     static_assert(
-      (std::same_as<
-         Result,
-         std::invoke_result_t<
-           Functor,
-           decltype(std::get< indexes>(data)),
-           std::integral_constant< Enum, static_cast< Enum>(indexes)>
-         >
-       > && ...),
+      (std::same_as< Result, Visit_result< Variant_reference, Functor, indexes>> && ...),
       "Enum_variant::visit requires the functor to return the same type for every alternative"
     );
 
@@ -113,7 +114,7 @@ class Enum_variant {
         return std::invoke(
           std::forward< Functor>(functor_inner),
           std::get< indexes>(data_inner),
-          std::integral_constant< Enum, static_cast< Enum>(indexes)>{}
+          Key_constant< indexes>{}
         );
       } ...
     };
