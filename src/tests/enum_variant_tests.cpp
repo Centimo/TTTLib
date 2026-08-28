@@ -288,8 +288,10 @@ TEST(EnumVariant, VisitReceivesTheLiveElementAndItsKey) {
   const Message weights(std::vector< double>{ 1.0, 2.0 });
 
   const auto describe = [](const auto& element, const auto key) {
-    return std::string(Enum_with_names< Kind>::get_name_by_value< decltype(key)::value>())
-           + '=' + To_text{}(element);
+    return
+      std::string(Enum_with_names< Kind>::get_name_by_value< decltype(key)::value>())
+      + '='
+      + To_text{}(element);
   };
 
   EXPECT_EQ(number.visit(describe), "NUMBER=int:42");

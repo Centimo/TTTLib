@@ -85,7 +85,9 @@ static_assert(std::same_as< Payload::Element< Field::WEIGHTS>, std::vector< doub
 
 static_assert(std::same_as< decltype(std::declval< Payload&>().at< Field::LABEL>()), std::string&>);
 static_assert(std::same_as< decltype(std::declval< const Payload&>().at< Field::LABEL>()), const std::string&>);
-static_assert(std::same_as< decltype(std::declval< const Payload&>().at< Constexpr_string<"LABEL">>()), const std::string&>);
+static_assert(
+  std::same_as< decltype(std::declval< const Payload&>().at< Constexpr_string<"LABEL">>()), const std::string&>
+);
 
 // ---- what the variadic constructor accepts ----
 static_assert(std::constructible_from< Coordinates, int, double, char>);
@@ -340,7 +342,11 @@ TEST(EnumTuple, ForEachVisitsEveryElementInEnumOrderWithItsKey) {
 
   std::vector< std::string> visited;
   payload.for_each([&visited](const auto& element, const auto key) {
-    visited.push_back(std::string(Enum_with_names< Field>::get_name_by_value< decltype(key)::value>()) + '=' + To_text{}(element));
+    visited.push_back(
+      std::string(Enum_with_names< Field>::get_name_by_value< decltype(key)::value>())
+      + '='
+      + To_text{}(element)
+    );
   });
 
   ASSERT_EQ(visited.size(), 3u);
