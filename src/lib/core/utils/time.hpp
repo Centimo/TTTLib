@@ -79,7 +79,7 @@ class Timer {
 
   Timer(Timer&& movable)
     : _duration(movable._duration)
-    , _function_now(movable._function_function)
+    , _function_now(movable._function_now)
     , _objects(std::move(movable._objects))
   {};
 
