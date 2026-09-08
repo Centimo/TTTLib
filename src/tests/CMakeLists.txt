@@ -1,6 +1,7 @@
 find_package(GTest REQUIRED)
 
 add_executable(tttlib_tests
+    at_least_tests.cpp
     meta_tests.cpp
     string_tests.cpp
     concepts_tests.cpp
