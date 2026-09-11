@@ -245,3 +245,48 @@ TEST(Swappable, CopyAssignmentConstructsTemporaryThenReconstructs) {
   EXPECT_EQ(Counted::destructions - destructions_before, 2);
   EXPECT_EQ((*first).value, 2);
 }
+
+// ---- Optional_reference ----
+
+// The conversion to bool is explicit, as for std::optional: it works in a condition and in direct
+// initialization, but an Optional_reference must not silently become a bool or an int.
+static_assert(!std::is_convertible_v< Optional_reference< int>, bool>);
+static_assert(!std::is_convertible_v< Optional_reference< int>, int>);
+static_assert(std::is_constructible_v< bool, Optional_reference< int>>);
+
+TEST(OptionalReference, EmptyIsFalseInACondition) {
+  const Optional_reference< int> empty;
+
+  EXPECT_FALSE(empty.has_value());
+  if (empty) {
+    FAIL() << "an empty Optional_reference must not be true in a condition";
+  }
+}
+
+TEST(OptionalReference, DereferenceReachesTheReferencedObject) {
+  int target = 1;
+  const Optional_reference< int> reference(target);
+
+  ASSERT_TRUE(reference.has_value());
+  EXPECT_EQ(*reference, 1);
+  *reference = 2;
+  EXPECT_EQ(target, 2);
+
+  struct Holder {
+    int field;
+  };
+  Holder holder{3};
+  const Optional_reference< Holder> holder_reference(holder);
+  EXPECT_EQ(holder_reference->field, 3);
+  holder_reference->field = 4;
+  EXPECT_EQ(holder.field, 4);
+}
+
+TEST(OptionalReference, DereferenceIsConstexpr) {
+  constexpr bool checked = [] {
+    int target = 5;
+    const Optional_reference< int> reference(target);
+    return reference.has_value() && *reference == 5;
+  }();
+  static_assert(checked);
+}

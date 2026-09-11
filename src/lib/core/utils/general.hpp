@@ -23,20 +23,25 @@ constexpr typename std::underlying_type<E>::type to_underlying(E e) noexcept {
     return static_cast<typename std::underlying_type<E>::type>(e);
 }
 
-template <class T>
-class Optional_reference : public std::optional<std::reference_wrapper<T>> {
+// Mirrors std::optional: the conversion to bool is explicit (usable in a condition, not assignable to a
+// bool or comparable with an int), and '*' / '->' are unchecked — dereferencing an empty Optional_reference is
+// undefined behaviour, as with std::optional. Use has_value() or a condition to check first.
+template< class T>
+class Optional_reference : public std::optional< std::reference_wrapper< T>> {
+  using Base = std::optional< std::reference_wrapper< T>>;
+
  public:
   using value_type = T;
   constexpr Optional_reference() = default;
-  constexpr Optional_reference(T& value) : std::optional<std::reference_wrapper<T>>(value) {};
-  constexpr operator bool() const noexcept { return this->has_value(); };
+  constexpr Optional_reference(T& value) : Base(value) {}
+  constexpr explicit operator bool() const noexcept { return this->has_value(); }
 
-  constexpr T* operator->() const noexcept {
-    return &(this->value().get());
+  constexpr T* operator -> () const noexcept {
+    return &static_cast< const Base&>(*this)->get();
   }
 
   constexpr T& operator * () const noexcept {
-    return this->value().get();
+    return static_cast< const Base&>(*this)->get();
   }
 };
 
