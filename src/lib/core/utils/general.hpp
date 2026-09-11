@@ -27,15 +27,15 @@ template <class T>
 class Optional_reference : public std::optional<std::reference_wrapper<T>> {
  public:
   using value_type = T;
-  Optional_reference() = default;
-  Optional_reference(T& value) : std::optional<std::reference_wrapper<T>>(value) {};
+  constexpr Optional_reference() = default;
+  constexpr Optional_reference(T& value) : std::optional<std::reference_wrapper<T>>(value) {};
   constexpr operator bool() const noexcept { return this->has_value(); };
 
-  T* operator->() const noexcept {
+  constexpr T* operator->() const noexcept {
     return &(this->value().get());
   }
 
-  T& operator * () const noexcept {
+  constexpr T& operator * () const noexcept {
     return this->value().get();
   }
 };
