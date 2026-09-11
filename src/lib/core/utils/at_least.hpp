@@ -157,10 +157,13 @@ class At_least {
           && !(std::same_as< Container, std::remove_cvref_t< Args>> && ...)
         )
       )
-      && (requires (Args&& argument) {
-            T(std::forward< Args>(argument));
-            T{std::forward< Args>(argument)};
-          } && ...)
+      && (
+        requires (Args&& argument) {
+          T(std::forward< Args>(argument));
+          T{std::forward< Args>(argument)};
+        }
+        && ...
+      )
   explicit(sizeof...(Args) == 1) At_least(Args&&... args) {
     reserve_additional(_data, sizeof...(Args));
     (_data.emplace_back(std::forward< Args>(args)), ...);
