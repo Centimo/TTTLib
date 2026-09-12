@@ -1,8 +1,8 @@
 #pragma once
 
-#include "enum.hpp"
 #include "general.hpp"
-#include "string.hpp"
+
+#include "../general.hpp"
 
 #include <array>
 #include <compare>
@@ -14,14 +14,14 @@
 #include <utility>
 
 
-namespace core::utils {
+namespace core::utils::enums {
 
-template< Enum_with_names_like Enum, class T>
-class Enum_array {
-  using Names = string::Enum_with_names< Enum>;
+template< With_names_like Enum, class T>
+class Array {
+  using Names = With_names< Enum>;
   static_assert(
     details::is_dense_enum< Enum>(),
-    "Enum_array requires a dense enum: values must form a permutation of 0..SIZE-1"
+    "Array requires a dense enum: values must form a permutation of 0..SIZE-1"
   );
 
   std::array< T, Names::SIZE> _data {};
@@ -31,7 +31,7 @@ class Enum_array {
   struct Range_fill {};
 
   // Stands in for "T swallows anything": a type nobody can name, so only a greedy converting constructor
-  // (std::any and the like) accepts it. Asking whether T is constructible from Enum_array itself would
+  // (std::any and the like) accepts it. Asking whether T is constructible from Array itself would
   // make the constraint depend on itself — that question re-enters this class's own overload set.
   struct Greediness_probe {};
 
@@ -42,7 +42,7 @@ class Enum_array {
   template< class Iterator, class Sentinel>
   static constexpr T take_next(Iterator& first, const Sentinel last, const std::size_t /* index */) {
     if (first == last) {
-      throw std::out_of_range("Enum_array: range has fewer elements than the enum has values");
+      throw std::out_of_range("Array: range has fewer elements than the enum has values");
     }
 
     T value(*first);
@@ -53,22 +53,22 @@ class Enum_array {
   // Braced-init evaluates its elements left to right, so the shared iterator advances in order across the
   // pack. Private: reached only through the from_range_t constructor's delegation.
   template< class Iterator, class Sentinel, std::size_t... indexes>
-  constexpr Enum_array(Range_fill, Iterator first, const Sentinel last, std::index_sequence< indexes...>)
+  constexpr Array(Range_fill, Iterator first, const Sentinel last, std::index_sequence< indexes...>)
     : _data { take_next(first, last, indexes)... }
   {
     if (first != last) {
-      throw std::out_of_range("Enum_array: range has more elements than the enum has values");
+      throw std::out_of_range("Array: range has more elements than the enum has values");
     }
   }
 
  public:
   static constexpr std::size_t SIZE = Names::SIZE;
 
-  constexpr Enum_array() = default;
+  constexpr Array() = default;
 
   // The 'sizeof...(Args) > 1' guard keeps this template from hijacking the copy/move constructor
   // when SIZE == 1 and T has a greedy converting constructor (std::any, std::variant, ...).
-  // Only the single-element form is explicit: there it guards against an unintended T-to-Enum_array
+  // Only the single-element form is explicit: there it guards against an unintended T-to-Array
   // conversion. A braced list reaches the initializer_list constructor below instead, except for the
   // element types excluded there, which fall back here.
   //
@@ -84,12 +84,12 @@ class Enum_array {
   template< class... Args>
     requires
       (sizeof...(Args) == SIZE)
-      && (sizeof...(Args) > 1 || !(std::same_as< Enum_array, std::remove_cvref_t< Args>> && ...))
+      && (sizeof...(Args) > 1 || !(std::same_as< Array, std::remove_cvref_t< Args>> && ...))
       && (requires (Args&& argument) {
             T(std::forward< Args>(argument));
             T{std::forward< Args>(argument)};
           } && ...)
-  explicit(SIZE == 1) constexpr Enum_array(Args&&... args) : _data { T(std::forward< Args>(args))... } {}
+  explicit(SIZE == 1) constexpr Array(Args&&... args) : _data { T(std::forward< Args>(args))... } {}
 
   // In list-initialization an initializer_list constructor is considered before every other candidate, so
   // this is what {a, b, c} resolves to, and the count it carries is a run-time property: a braced list of
@@ -97,44 +97,44 @@ class Enum_array {
   //
   // Two element types are excluded so that they keep reaching that variadic constructor. A move-only T
   // cannot come from an initializer_list at all — its elements are const. A T that swallows anything
-  // (std::any and the like) would turn 'Enum_array copy{source}' into a one-element list wrapping the
+  // (std::any and the like) would turn 'Array copy{source}' into a one-element list wrapping the
   // source, which is the very hijack the self-exclusion above prevents; being considered first, this
   // constructor would otherwise bypass it.
   //
   // Note that elements are copied even from an rvalue: {std::move(a), ...} copies, where the variadic
   // constructor moves.
-  constexpr Enum_array(const std::initializer_list< T> values)
+  constexpr Array(const std::initializer_list< T> values)
     requires std::copy_constructible< T> && (!std::constructible_from< T, Greediness_probe>)
-    : Enum_array(std::from_range, values)
+    : Array(std::from_range, values)
   {}
 
   // Fill positionally from a range: element i goes to the enumerator with underlying value i. The range
   // must yield exactly SIZE elements — too few or too many throws, so the array is never left partial.
   template< std::ranges::input_range Range>
     requires std::constructible_from< T, std::ranges::range_reference_t< Range>>
-  constexpr Enum_array(std::from_range_t, Range&& range)
-    : Enum_array(Range_fill{}, std::ranges::begin(range), std::ranges::end(range), std::make_index_sequence< SIZE>{})
+  constexpr Array(std::from_range_t, Range&& range)
+    : Array(Range_fill{}, std::ranges::begin(range), std::ranges::end(range), std::make_index_sequence< SIZE>{})
   {}
 
   // Key known at compile time: validity is proven, so the access needs no check and cannot throw.
   template< Enum key>
   constexpr T& at() noexcept {
-    static_assert(is_declared_enumerator(key), "Enum value is not declared in the Enum_with_names specialization");
+    static_assert(is_declared_enumerator(key), "Enum value is not declared in the With_names specialization");
     return _data[to_underlying(key)];
   }
 
   template< Enum key>
   constexpr const T& at() const noexcept {
-    static_assert(is_declared_enumerator(key), "Enum value is not declared in the Enum_with_names specialization");
+    static_assert(is_declared_enumerator(key), "Enum value is not declared in the With_names specialization");
     return _data[to_underlying(key)];
   }
 
   // Checked access for a runtime key, mirroring std::array::at. A runtime key cannot be proven valid: it may
   // be cast from an arbitrary integer, or be an enumerator added to the enum but never declared in
-  // Enum_with_names.
+  // With_names.
   constexpr T& at(const Enum key) {
     if (!is_declared_enumerator(key)) {
-      throw std::out_of_range("Enum_array: enum value is not a declared enumerator");
+      throw std::out_of_range("Array: enum value is not a declared enumerator");
     }
 
     return _data[to_underlying(key)];
@@ -142,7 +142,7 @@ class Enum_array {
 
   constexpr const T& at(const Enum key) const {
     if (!is_declared_enumerator(key)) {
-      throw std::out_of_range("Enum_array: enum value is not a declared enumerator");
+      throw std::out_of_range("Array: enum value is not a declared enumerator");
     }
 
     return _data[to_underlying(key)];
@@ -162,11 +162,11 @@ class Enum_array {
   // instantiate lazily, only where a comparison is actually used: for an element type that cannot be
   // compared the operators simply never come into existence, whereas a defaulted comparison is
   // instantiated together with the class and would hard-error inside std::array's own comparison.
-  constexpr bool operator == (const Enum_array& other) const {
+  constexpr bool operator == (const Array& other) const {
     return _data == other._data;
   }
 
-  constexpr auto operator <=> (const Enum_array& other) const {
+  constexpr auto operator <=> (const Array& other) const {
     return _data <=> other._data;
   }
 
@@ -187,4 +187,4 @@ class Enum_array {
   }
 };
 
-} // namespace core::utils
+} // namespace core::utils::enums

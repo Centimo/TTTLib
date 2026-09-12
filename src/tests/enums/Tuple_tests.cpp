@@ -1,5 +1,5 @@
-#include "core/utils/enum_array.hpp"
-#include "core/utils/enum_tuple.hpp"
+#include "core/utils/enums/Array.hpp"
+#include "core/utils/enums/Tuple.hpp"
 #include "core/utils/meta.hpp"
 
 #include <gtest/gtest.h>
@@ -15,55 +15,56 @@
 #include <vector>
 
 using namespace core::utils;
+using namespace core::utils::enums;
 using namespace core::utils::string;
 
 // ---- dense enum with names declared in enum order ----
 enum class Field { INDEX, LABEL, WEIGHTS };
 
-namespace core::utils::string {
+namespace core::utils::enums {
 template<>
-class Enum_with_names< Field> : public Enum_with_names_base<
-  Named_enum_value< Field::INDEX,   Constexpr_string<"INDEX">>,
-  Named_enum_value< Field::LABEL,   Constexpr_string<"LABEL">>,
-  Named_enum_value< Field::WEIGHTS, Constexpr_string<"WEIGHTS">>
+class With_names< Field> : public With_names_base<
+  Named_value< Field::INDEX,   Constexpr_string<"INDEX">>,
+  Named_value< Field::LABEL,   Constexpr_string<"LABEL">>,
+  Named_value< Field::WEIGHTS, Constexpr_string<"WEIGHTS">>
 > {};
-} // namespace core::utils::string
+} // namespace core::utils::enums
 
 // ---- dense enum with names declared out of enum order ----
 enum class Axis { X, Y, Z };
 
-namespace core::utils::string {
+namespace core::utils::enums {
 template<>
-class Enum_with_names< Axis> : public Enum_with_names_base<
-  Named_enum_value< Axis::Z, Constexpr_string<"Z">>,
-  Named_enum_value< Axis::X, Constexpr_string<"X">>,
-  Named_enum_value< Axis::Y, Constexpr_string<"Y">>
+class With_names< Axis> : public With_names_base<
+  Named_value< Axis::Z, Constexpr_string<"Z">>,
+  Named_value< Axis::X, Constexpr_string<"X">>,
+  Named_value< Axis::Y, Constexpr_string<"Y">>
 > {};
-} // namespace core::utils::string
+} // namespace core::utils::enums
 
 // ---- enum carrying an enumerator that was never declared in the specialization ----
 enum class Stage { START, FINISH, UNDECLARED };
 
-namespace core::utils::string {
+namespace core::utils::enums {
 template<>
-class Enum_with_names< Stage> : public Enum_with_names_base<
-  Named_enum_value< Stage::START,  Constexpr_string<"START">>,
-  Named_enum_value< Stage::FINISH, Constexpr_string<"FINISH">>
+class With_names< Stage> : public With_names_base<
+  Named_value< Stage::START,  Constexpr_string<"START">>,
+  Named_value< Stage::FINISH, Constexpr_string<"FINISH">>
 > {};
-} // namespace core::utils::string
+} // namespace core::utils::enums
 
 // ---- single-value enum: guards the copy constructor against the variadic one ----
 enum class Only_slot { SINGLE };
 
-namespace core::utils::string {
+namespace core::utils::enums {
 template<>
-class Enum_with_names< Only_slot> : public Enum_with_names_base<
-  Named_enum_value< Only_slot::SINGLE, Constexpr_string<"SINGLE">>
+class With_names< Only_slot> : public With_names_base<
+  Named_value< Only_slot::SINGLE, Constexpr_string<"SINGLE">>
 > {};
-} // namespace core::utils::string
+} // namespace core::utils::enums
 
-using Payload = Enum_tuple< Field, int, std::string, std::vector< double>>;
-using Coordinates = Enum_tuple< Axis, int, double, char>;
+using Payload = Tuple< Field, int, std::string, std::vector< double>>;
+using Coordinates = Tuple< Axis, int, double, char>;
 
 // ---- constexpr construction and compile-time keyed access ----
 constexpr Coordinates COORDINATES(1, 2.5, 'z');
@@ -98,9 +99,9 @@ static_assert(!std::constructible_from< Coordinates, const char*, double, char>)
 
 // The single-element form is explicit, so the element type never converts into the container implicitly,
 // and it checks narrowing exactly as the multi-element form does.
-static_assert(std::constructible_from< Enum_tuple< Only_slot, int>, int>);
-static_assert(!std::convertible_to< int, Enum_tuple< Only_slot, int>>);
-static_assert(!std::constructible_from< Enum_tuple< Only_slot, int>, double>);
+static_assert(std::constructible_from< Tuple< Only_slot, int>, int>);
+static_assert(!std::convertible_to< int, Tuple< Only_slot, int>>);
+static_assert(!std::constructible_from< Tuple< Only_slot, int>, double>);
 
 // ---- tuple protocol: positions in enum order, keys not carried over ----
 static_assert(std::tuple_size_v< Payload> == 3);
@@ -120,8 +121,8 @@ static_assert(std::same_as< decltype(get< 1>(std::declval< const Payload>())), c
 
 // Copying the container is the implicit copy constructor's job at every size, not the variadic one's.
 static_assert(std::copy_constructible< Coordinates>);
-static_assert(std::move_constructible< Enum_tuple< Axis, std::unique_ptr< int>, std::string, char>>);
-static_assert(!std::copy_constructible< Enum_tuple< Axis, std::unique_ptr< int>, std::string, char>>);
+static_assert(std::move_constructible< Tuple< Axis, std::unique_ptr< int>, std::string, char>>);
+static_assert(!std::copy_constructible< Tuple< Axis, std::unique_ptr< int>, std::string, char>>);
 
 namespace {
 
@@ -195,7 +196,7 @@ TEST(EnumTuple, BracedListReachesTheVariadicConstructor) {
 }
 
 TEST(EnumTuple, ParenthesizedFormBuildsTheElementItsOwnWay) {
-  // A single argument to a vector element is a size, not a one-element list — the same reading Enum_array
+  // A single argument to a vector element is a size, not a one-element list — the same reading Array
   // gives it.
   const Payload payload(1, "x", std::vector< double>(3));
 
@@ -230,7 +231,7 @@ TEST(EnumTuple, NameKeyedAccessReachesTheSameElement) {
 }
 
 TEST(EnumTuple, UnorderedDeclarationStillIndexesByUnderlyingValue) {
-  // Enum_with_names< Axis> declares Z, X, Y; the arguments are still given in enum order X, Y, Z.
+  // With_names< Axis> declares Z, X, Y; the arguments are still given in enum order X, Y, Z.
   const Coordinates coordinates(1, 2.5, 'z');
 
   EXPECT_EQ(coordinates.at< Axis::X>(), 1);
@@ -241,7 +242,7 @@ TEST(EnumTuple, UnorderedDeclarationStillIndexesByUnderlyingValue) {
 TEST(EnumTuple, VariadicBuildsElementsInPlace) {
   Tracked::reset();
 
-  const Enum_tuple< Axis, Tracked, int, char> tuple(std::string("value"), 1, 'c');
+  const Tuple< Axis, Tracked, int, char> tuple(std::string("value"), 1, 'c');
 
   EXPECT_EQ(Tracked::constructions, 1);
   EXPECT_EQ(Tracked::copies, 0);
@@ -252,7 +253,7 @@ TEST(EnumTuple, VariadicBuildsElementsInPlace) {
 }
 
 TEST(EnumTuple, ConstructsANeitherCopyableNorMovableElement) {
-  const Enum_tuple< Axis, Immovable, int, char> tuple(5, 1, 'c');
+  const Tuple< Axis, Immovable, int, char> tuple(5, 1, 'c');
 
   EXPECT_EQ(tuple.at< Axis::X>().value, 5);
   EXPECT_EQ(tuple.at< Axis::Y>(), 1);
@@ -260,7 +261,7 @@ TEST(EnumTuple, ConstructsANeitherCopyableNorMovableElement) {
 }
 
 TEST(EnumTuple, ConstructsMoveOnlyElements) {
-  Enum_tuple< Axis, std::unique_ptr< int>, std::string, char> tuple(std::make_unique< int>(3), "text", 'c');
+  Tuple< Axis, std::unique_ptr< int>, std::string, char> tuple(std::make_unique< int>(3), "text", 'c');
 
   ASSERT_TRUE(tuple.at< Axis::X>());
   EXPECT_EQ(*tuple.at< Axis::X>(), 3);
@@ -269,15 +270,15 @@ TEST(EnumTuple, ConstructsMoveOnlyElements) {
 }
 
 TEST(EnumTuple, CopyConstructionIsNotHijackedByVariadicConstructor) {
-  const Enum_tuple< Only_slot, std::any> source(std::any(42));
-  const Enum_tuple< Only_slot, std::any> copy(source);
+  const Tuple< Only_slot, std::any> source(std::any(42));
+  const Tuple< Only_slot, std::any> copy(source);
 
   ASSERT_TRUE(copy.at< Only_slot::SINGLE>().has_value());
   EXPECT_EQ(std::any_cast< int>(copy.at< Only_slot::SINGLE>()), 42);
 }
 
 TEST(EnumTuple, ElementWithoutComparisonOperatorsIsStillUsable) {
-  Enum_tuple< Axis, Opaque, int, char> tuple(Opaque{ 3 }, 1, 'c');
+  Tuple< Axis, Opaque, int, char> tuple(Opaque{ 3 }, 1, 'c');
   tuple.at< Axis::X>().value = 4;
 
   EXPECT_EQ(tuple.at< Axis::X>().value, 4);
@@ -305,7 +306,7 @@ TEST(EnumTuple, VisitDispatchesToTheElementOfTheRuntimeKey) {
 }
 
 TEST(EnumTuple, VisitYieldsAReferenceToTheElement) {
-  Enum_tuple< Axis, int, int, int> counters(1, 2, 3);
+  Tuple< Axis, int, int, int> counters(1, 2, 3);
   counters.visit(Axis::Y, [](int& value) -> int& { return value; }) += 10;
 
   EXPECT_EQ(counters.at< Axis::X>(), 1);
@@ -315,7 +316,7 @@ TEST(EnumTuple, VisitYieldsAReferenceToTheElement) {
 
 TEST(EnumTuple, VisitWorksAtCompileTime) {
   constexpr int doubled = [] {
-    const Enum_tuple< Axis, int, int, int> counters(1, 2, 3);
+    const Tuple< Axis, int, int, int> counters(1, 2, 3);
     return counters.visit(Axis::Z, [](const int value) { return value * 2; });
   }();
 
@@ -324,7 +325,7 @@ TEST(EnumTuple, VisitWorksAtCompileTime) {
 }
 
 TEST(EnumTuple, VisitThrowsForUndeclaredEnumerator) {
-  const Enum_tuple< Stage, int, std::string> stage(1, "text");
+  const Tuple< Stage, int, std::string> stage(1, "text");
 
   EXPECT_THROW(stage.visit(Stage::UNDECLARED, To_text{}), std::out_of_range);
   EXPECT_EQ(stage.visit(Stage::FINISH, To_text{}), "string:text");
@@ -343,7 +344,7 @@ TEST(EnumTuple, ForEachVisitsEveryElementInEnumOrderWithItsKey) {
   std::vector< std::string> visited;
   payload.for_each([&visited](const auto& element, const auto key) {
     visited.push_back(
-      std::string(Enum_with_names< Field>::get_name_by_value< decltype(key)::value>())
+      std::string(With_names< Field>::get_name_by_value< decltype(key)::value>())
       + '='
       + To_text{}(element)
     );
@@ -356,7 +357,7 @@ TEST(EnumTuple, ForEachVisitsEveryElementInEnumOrderWithItsKey) {
 }
 
 TEST(EnumTuple, ForEachCanModifyEveryElement) {
-  Enum_tuple< Axis, int, int, int> counters(1, 2, 3);
+  Tuple< Axis, int, int, int> counters(1, 2, 3);
   counters.for_each([](int& value, const auto /* key */) { value *= 10; });
 
   EXPECT_EQ(counters.at< Axis::X>(), 10);
@@ -370,8 +371,8 @@ TEST(EnumTuple, CopyAndMoveTheWholeContainer) {
 
   EXPECT_EQ(copy, source);
 
-  Enum_tuple< Axis, std::unique_ptr< int>, std::string, char> movable(std::make_unique< int>(3), "text", 'c');
-  const Enum_tuple< Axis, std::unique_ptr< int>, std::string, char> moved(std::move(movable));
+  Tuple< Axis, std::unique_ptr< int>, std::string, char> movable(std::make_unique< int>(3), "text", 'c');
+  const Tuple< Axis, std::unique_ptr< int>, std::string, char> moved(std::move(movable));
 
   ASSERT_TRUE(moved.at< Axis::X>());
   EXPECT_EQ(*moved.at< Axis::X>(), 3);
@@ -398,7 +399,7 @@ TEST(EnumTuple, StructuredBindingsWalkTheElementsInEnumOrder) {
 }
 
 TEST(EnumTuple, StructuredBindingsFollowEnumOrderAndNotDeclarationOrder) {
-  // Enum_with_names< Axis> declares Z, X, Y; the bindings still come out as X, Y, Z.
+  // With_names< Axis> declares Z, X, Y; the bindings still come out as X, Y, Z.
   const Coordinates coordinates(1, 2.5, 'z');
   const auto& [x, y, z] = coordinates;
 
@@ -421,7 +422,7 @@ TEST(EnumTuple, StructuredBindingsOfAConstContainerAreConst) {
 }
 
 TEST(EnumTuple, GetMovesOutOfAnRvalueContainer) {
-  Enum_tuple< Axis, std::unique_ptr< int>, std::string, char> tuple(std::make_unique< int>(3), "text", 'c');
+  Tuple< Axis, std::unique_ptr< int>, std::string, char> tuple(std::make_unique< int>(3), "text", 'c');
   const std::unique_ptr< int> taken = get< 0>(std::move(tuple));
 
   ASSERT_TRUE(taken);
@@ -430,11 +431,11 @@ TEST(EnumTuple, GetMovesOutOfAnRvalueContainer) {
 }
 
 TEST(EnumTuple, SharesTheEnumDescriptionWithEnumArray) {
-  // Both containers key off the same Enum_with_names specialization, now declared in one shared header.
-  const Enum_array< Field, int> sizes(1, 2, 3);
+  // Both containers key off the same With_names specialization, now declared in one shared header.
+  const Array< Field, int> sizes(1, 2, 3);
   const Payload payload(1, "text", std::vector< double>{});
 
-  static_assert(Payload::SIZE == Enum_array< Field, int>::SIZE);
+  static_assert(Payload::SIZE == Array< Field, int>::SIZE);
   EXPECT_EQ(sizes.at< Field::LABEL>(), 2);
   EXPECT_EQ(payload.visit(Field::INDEX, To_text{}), "int:1");
   EXPECT_EQ(payload.at< Field::LABEL>(), "text");

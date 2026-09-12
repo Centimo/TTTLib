@@ -1,8 +1,9 @@
 #pragma once
 
-#include "enum.hpp"
 #include "general.hpp"
-#include "string.hpp"
+
+#include "../general.hpp"
+#include "../string.hpp"
 
 #include <array>
 #include <compare>
@@ -15,7 +16,7 @@
 #include <variant>
 
 
-namespace core::utils {
+namespace core::utils::enums {
 
 // Names the alternative to build, the way std::in_place_index does for std::variant: the key picks the
 // slot, the remaining arguments build the element in it.
@@ -47,19 +48,19 @@ concept Buildable_element =
 } // namespace details
 
 // One type per enumerator, positionally, of which exactly one is alive at a time: the active enumerator is
-// the discriminant. Where Enum_tuple holds every element at once, this one holds a single element and
+// the discriminant. Where Tuple holds every element at once, this one holds a single element and
 // remembers whose it is.
-template< Enum_with_names_like Enum, class... T>
-class Enum_variant {
-  using Names = string::Enum_with_names< Enum>;
+template< With_names_like Enum, class... T>
+class Variant {
+  using Names = With_names< Enum>;
   static_assert(
     details::is_dense_enum< Enum>(),
-    "Enum_variant requires a dense enum: values must form a permutation of 0..SIZE-1"
+    "Variant requires a dense enum: values must form a permutation of 0..SIZE-1"
   );
 
   // Together with density this is the completeness check: the declared values are exactly 0..SIZE-1, so
   // matching their count means every declared enumerator receives a type and no position is left spare.
-  static_assert(sizeof...(T) == Names::SIZE, "Enum_variant requires exactly one type per declared enum value");
+  static_assert(sizeof...(T) == Names::SIZE, "Variant requires exactly one type per declared enum value");
 
   // What keeps a keyless state impossible. std::variant loses its value only when it has to rebuild an
   // element in place and that construction throws; given a move that cannot throw, both its own
@@ -67,13 +68,13 @@ class Enum_variant {
   // previous element where it was. active_key() therefore always has an answer.
   static_assert(
     (std::is_nothrow_move_constructible_v< T> && ...),
-    "Enum_variant requires alternatives whose move constructor cannot throw"
+    "Variant requires alternatives whose move constructor cannot throw"
   );
 
-  using Variant = std::variant< T...>;
+  using Std_variant = std::variant< T...>;
   using Types = std::tuple< T...>;
 
-  Variant _data;
+  Std_variant _data;
 
   static constexpr std::size_t index_of(const Enum key) noexcept {
     return static_cast< std::size_t>(to_underlying(key));
@@ -105,7 +106,7 @@ class Enum_variant {
     using Result = Visit_result< Variant_reference, Functor, 0>;
     static_assert(
       (std::same_as< Result, Visit_result< Variant_reference, Functor, indexes>> && ...),
-      "Enum_variant::visit requires the functor to return the same type for every alternative"
+      "Variant::visit requires the functor to return the same type for every alternative"
     );
 
     using Handler = Result (*)(Variant_reference&, Functor&&);
@@ -127,33 +128,33 @@ class Enum_variant {
 
   // Part of the interface: at< key>() returns it, and a caller needs to be able to name it.
   template< Enum key>
-  using Element = typename details::Enum_element< Types, Enum, key>::type;
+  using Element = typename details::Element< Types, Enum, key>::type;
 
   // The enumerator with underlying value 0 starts out active, since std::variant default-constructs its
   // first alternative.
-  constexpr Enum_variant() = default;
+  constexpr Variant() = default;
 
   // The alternative follows from the argument, by std::variant's own rules: the imaginary overload set
   // over the alternatives has to pick exactly one. A type appearing once in the list is thus reachable
   // without naming its key; a type appearing twice makes that set ambiguous and can only be built through
-  // In_place_key. The same rules reject a narrowing argument, which Enum_tuple's constructor has to ask
+  // In_place_key. The same rules reject a narrowing argument, which Tuple's constructor has to ask
   // for separately.
   //
-  // Implicit, where Enum_tuple's single-argument constructor is explicit. There the argument is one element
+  // Implicit, where Tuple's single-argument constructor is explicit. There the argument is one element
   // of several and the conversion would be a guess; here the element is the whole value, and 'Message
   // message = "text"' is the shape std::variant taught everyone to expect. The copy constructor is shielded
   // by the first clause below rather than by explicitness.
   template< class Argument>
     requires
-      (!std::same_as< Enum_variant, std::remove_cvref_t< Argument>>)
+      (!std::same_as< Variant, std::remove_cvref_t< Argument>>)
       && (!details::Is_in_place_key< std::remove_cvref_t< Argument>>::value)
-      && std::constructible_from< Variant, Argument>
-  constexpr Enum_variant(Argument&& argument) : _data(std::forward< Argument>(argument)) {}
+      && std::constructible_from< Std_variant, Argument>
+  constexpr Variant(Argument&& argument) : _data(std::forward< Argument>(argument)) {}
 
   // Naming the key must not buy a silent truncation that the keyless constructor above rejects, hence
   // Buildable_element rather than plain constructibility.
   template< Enum key, class... Args> requires details::Buildable_element< Element< key>, Args...>
-  constexpr Enum_variant(In_place_key< key>, Args&&... args)
+  constexpr Variant(In_place_key< key>, Args&&... args)
     : _data(std::in_place_index< index_of(key)>, std::forward< Args>(args)...)
   {}
 
@@ -178,7 +179,7 @@ class Enum_variant {
 
   template< Enum key>
   constexpr bool holds() const noexcept {
-    static_assert(is_declared_enumerator(key), "Enum value is not declared in the Enum_with_names specialization");
+    static_assert(is_declared_enumerator(key), "Enum value is not declared in the With_names specialization");
     return _data.index() == index_of(key);
   }
 
@@ -194,7 +195,7 @@ class Enum_variant {
     return std::get< index_of(key)>(_data);
   }
 
-  // The enumerator's name from the Enum_with_names specialization in place of the enumerator itself, for
+  // The enumerator's name from the With_names specialization in place of the enumerator itself, for
   // when the key arrives as a string template argument.
   template< string::CVS_constexpr_string_like Name>
   constexpr auto& at() {
@@ -241,13 +242,13 @@ class Enum_variant {
   // elements only for a matching one. Written as ordinary members (not '= default') so their bodies
   // instantiate lazily, only where a comparison is actually used: for an element type that cannot be
   // compared the operators simply never come into existence.
-  constexpr bool operator == (const Enum_variant& other) const {
+  constexpr bool operator == (const Variant& other) const {
     return _data == other._data;
   }
 
-  constexpr auto operator <=> (const Enum_variant& other) const {
+  constexpr auto operator <=> (const Variant& other) const {
     return _data <=> other._data;
   }
 };
 
-} // namespace core::utils
+} // namespace core::utils::enums

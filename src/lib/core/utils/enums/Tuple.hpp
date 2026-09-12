@@ -1,8 +1,9 @@
 #pragma once
 
-#include "enum.hpp"
 #include "general.hpp"
-#include "string.hpp"
+
+#include "../general.hpp"
+#include "../string.hpp"
 
 #include <array>
 #include <compare>
@@ -15,25 +16,25 @@
 #include <utility>
 
 
-namespace core::utils {
+namespace core::utils::enums {
 
 // One type per enumerator, positionally: type i belongs to the enumerator whose underlying value is i —
-// the rule by which Enum_array fills its elements, applied to the types themselves.
-template< Enum_with_names_like Enum, class... T>
-class Enum_tuple {
-  using Names = string::Enum_with_names< Enum>;
+// the rule by which Array fills its elements, applied to the types themselves.
+template< With_names_like Enum, class... T>
+class Tuple {
+  using Names = With_names< Enum>;
   static_assert(
     details::is_dense_enum< Enum>(),
-    "Enum_tuple requires a dense enum: values must form a permutation of 0..SIZE-1"
+    "Tuple requires a dense enum: values must form a permutation of 0..SIZE-1"
   );
 
   // Together with density this is the completeness check: the declared values are exactly 0..SIZE-1, so
   // matching their count means every declared enumerator receives a type and no position is left spare.
-  static_assert(sizeof...(T) == Names::SIZE, "Enum_tuple requires exactly one type per declared enum value");
+  static_assert(sizeof...(T) == Names::SIZE, "Tuple requires exactly one type per declared enum value");
 
-  using Tuple = std::tuple< T...>;
+  using Std_tuple = std::tuple< T...>;
 
-  Tuple _data {};
+  Std_tuple _data {};
 
   // The key an element belongs to, as the compile-time constant the functor of for_each() receives.
   template< std::size_t index>
@@ -56,11 +57,11 @@ class Enum_tuple {
     using Result = std::invoke_result_t< Functor, decltype(std::get< 0>(data))>;
     static_assert(
       (std::same_as< Result, std::invoke_result_t< Functor, decltype(std::get< indexes>(data))>> && ...),
-      "Enum_tuple::visit requires the functor to return the same type for every element"
+      "Tuple::visit requires the functor to return the same type for every element"
     );
 
     if (!is_declared_enumerator(key)) {
-      throw std::out_of_range("Enum_tuple: enum value is not a declared enumerator");
+      throw std::out_of_range("Tuple: enum value is not a declared enumerator");
     }
 
     using Handler = Result (*)(Tuple_reference&, Functor&&);
@@ -79,7 +80,7 @@ class Enum_tuple {
   static constexpr void for_each_inner(Tuple_reference& data, Functor& functor, std::index_sequence< indexes...>) {
     static_assert(
       (std::invocable< Functor&, decltype(std::get< indexes>(data)), Key_constant< indexes>> && ...),
-      "Enum_tuple::for_each requires the functor to accept every element together with its key"
+      "Tuple::for_each requires the functor to accept every element together with its key"
     );
 
     (std::invoke(functor, std::get< indexes>(data), Key_constant< indexes>{}), ...);
@@ -90,17 +91,17 @@ class Enum_tuple {
 
   // Part of the interface: at< key>() returns it, and a caller needs to be able to name it.
   template< Enum key>
-  using Element = typename details::Enum_element< Tuple, Enum, key>::type;
+  using Element = typename details::Element< Std_tuple, Enum, key>::type;
 
-  constexpr Enum_tuple() = default;
+  constexpr Tuple() = default;
 
   // Arguments come in enum order — argument i initializes the element of the enumerator with underlying
-  // value i — whatever order the enumerators were declared in inside the Enum_with_names specialization.
+  // value i — whatever order the enumerators were declared in inside the With_names specialization.
   //
   // The 'sizeof...(Args) > 1' guard keeps this template from hijacking the copy/move constructor when
   // SIZE == 1 and the element type has a greedy converting constructor (std::any, std::variant, ...).
-  // Only the single-element form is explicit: there it guards against an unintended element-to-Enum_tuple
-  // conversion. Unlike Enum_array there is no initializer_list constructor to compete with a braced list —
+  // Only the single-element form is explicit: there it guards against an unintended element-to-Tuple
+  // conversion. Unlike Array there is no initializer_list constructor to compete with a braced list —
   // elements are heterogeneous — so '{...}' and '(...)' reach this same constructor, and a wrong argument
   // count is always a compile-time error.
   //
@@ -115,12 +116,12 @@ class Enum_tuple {
   template< class... Args>
     requires
       (sizeof...(Args) == SIZE)
-      && (sizeof...(Args) > 1 || !(std::same_as< Enum_tuple, std::remove_cvref_t< Args>> && ...))
+      && (sizeof...(Args) > 1 || !(std::same_as< Tuple, std::remove_cvref_t< Args>> && ...))
       && (requires (Args&& argument) {
             T(std::forward< Args>(argument));
             T{std::forward< Args>(argument)};
           } && ...)
-  explicit(SIZE == 1) constexpr Enum_tuple(Args&&... args) : _data(std::forward< Args>(args)...) {}
+  explicit(SIZE == 1) constexpr Tuple(Args&&... args) : _data(std::forward< Args>(args)...) {}
 
   // Key known at compile time: validity is proven, so the access needs no check and cannot throw. There is
   // no run-time counterpart — the type of the result depends on the key, so a run-time key can only be
@@ -135,7 +136,7 @@ class Enum_tuple {
     return std::get< static_cast< std::size_t>(to_underlying(key))>(_data);
   }
 
-  // The enumerator's name from the Enum_with_names specialization in place of the enumerator itself, for
+  // The enumerator's name from the With_names specialization in place of the enumerator itself, for
   // when the key arrives as a string template argument. The name is resolved at compile time, so nothing
   // of it survives to run time; a name that was never declared fails inside get_value_by_name.
   template< string::CVS_constexpr_string_like Name>
@@ -149,8 +150,8 @@ class Enum_tuple {
   }
 
   // The only way to an element by a key known at run time, and the only place where such a key can be
-  // wrong: it may be cast from an arbitrary integer, or be an enumerator that Enum_with_names never
-  // declared, so an invalid key throws exactly as Enum_array::at(Enum) does. The functor must return the
+  // wrong: it may be cast from an arbitrary integer, or be an enumerator that With_names never
+  // declared, so an invalid key throws exactly as Array::at(Enum) does. The functor must return the
   // same type for every element — the type of an expression cannot depend on a run-time value.
   template< class Functor>
   constexpr decltype(auto) visit(const Enum key, Functor&& functor) {
@@ -163,8 +164,8 @@ class Enum_tuple {
   }
 
   // Every element in enum order. The key travels with the element as a compile-time constant, so the
-  // functor can tell the elements apart: look the name up through Enum_with_names, reach the same key in
-  // another Enum_tuple, and so on.
+  // functor can tell the elements apart: look the name up through With_names, reach the same key in
+  // another Tuple, and so on.
   template< class Functor>
   constexpr void for_each(Functor&& functor) {
     for_each_inner(_data, functor, std::make_index_sequence< SIZE>{});
@@ -179,11 +180,11 @@ class Enum_tuple {
   // instantiate lazily, only where a comparison is actually used: for an element type that cannot be
   // compared the operators simply never come into existence, whereas a defaulted comparison is
   // instantiated together with the class and would hard-error inside std::tuple's own comparison.
-  constexpr bool operator == (const Enum_tuple& other) const {
+  constexpr bool operator == (const Tuple& other) const {
     return _data == other._data;
   }
 
-  constexpr auto operator <=> (const Enum_tuple& other) const {
+  constexpr auto operator <=> (const Tuple& other) const {
     return _data <=> other._data;
   }
 
@@ -196,46 +197,46 @@ class Enum_tuple {
   // anyone else. std::apply stays out of reach whatever we do here - it is specified to call std::get,
   // which cannot be extended for a program-defined type; for_each() covers what it would have been used for.
   template< std::size_t index> requires (index < sizeof...(T))
-  friend constexpr std::tuple_element_t< index, Tuple>& get(Enum_tuple& tuple) noexcept {
+  friend constexpr std::tuple_element_t< index, Std_tuple>& get(Tuple& tuple) noexcept {
     return std::get< index>(tuple._data);
   }
 
   template< std::size_t index> requires (index < sizeof...(T))
-  friend constexpr const std::tuple_element_t< index, Tuple>& get(const Enum_tuple& tuple) noexcept {
+  friend constexpr const std::tuple_element_t< index, Std_tuple>& get(const Tuple& tuple) noexcept {
     return std::get< index>(tuple._data);
   }
 
   template< std::size_t index> requires (index < sizeof...(T))
-  friend constexpr std::tuple_element_t< index, Tuple>&& get(Enum_tuple&& tuple) noexcept {
+  friend constexpr std::tuple_element_t< index, Std_tuple>&& get(Tuple&& tuple) noexcept {
     return std::get< index>(std::move(tuple._data));
   }
 
   template< std::size_t index> requires (index < sizeof...(T))
-  friend constexpr const std::tuple_element_t< index, Tuple>&& get(const Enum_tuple&& tuple) noexcept {
+  friend constexpr const std::tuple_element_t< index, Std_tuple>&& get(const Tuple&& tuple) noexcept {
     return std::get< index>(std::move(tuple._data));
   }
 };
 
-} // namespace core::utils
+} // namespace core::utils::enums
 
 namespace std {
 
-template< core::utils::Enum_with_names_like Enum, class... T>
-struct tuple_size< core::utils::Enum_tuple< Enum, T...>> : integral_constant< size_t, sizeof...(T)> {};
+template< core::utils::enums::With_names_like Enum, class... T>
+struct tuple_size< core::utils::enums::Tuple< Enum, T...>> : integral_constant< size_t, sizeof...(T)> {};
 
-// Split into a constrained specialization and a plain one for the same reason details::Enum_tuple_element
+// Split into a constrained specialization and a plain one for the same reason details::Element
 // is: forming the index anyway would answer an out-of-range one with std::tuple's own assertion rather
 // than with a message naming this container.
-template< size_t index, core::utils::Enum_with_names_like Enum, class... T>
-struct tuple_element< index, core::utils::Enum_tuple< Enum, T...>> {
+template< size_t index, core::utils::enums::With_names_like Enum, class... T>
+struct tuple_element< index, core::utils::enums::Tuple< Enum, T...>> {
   static_assert(
     core::utils::meta::ALWAYS_FALSE< tuple< T...>>,
-    "Enum_tuple: element index is out of range"
+    "Tuple: element index is out of range"
   );
 };
 
-template< size_t index, core::utils::Enum_with_names_like Enum, class... T> requires (index < sizeof...(T))
-struct tuple_element< index, core::utils::Enum_tuple< Enum, T...>> {
+template< size_t index, core::utils::enums::With_names_like Enum, class... T> requires (index < sizeof...(T))
+struct tuple_element< index, core::utils::enums::Tuple< Enum, T...>> {
   using type = tuple_element_t< index, tuple< T...>>;
 };
 

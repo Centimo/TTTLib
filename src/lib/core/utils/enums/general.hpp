@@ -1,35 +1,24 @@
 #pragma once
 
-#include "general.hpp"
-#include "meta.hpp"
-#include "string.hpp"
+#include "With_names.hpp"
 
-#include <concepts>
+#include "../general.hpp"
+#include "../meta.hpp"
+
 #include <cstddef>
 #include <tuple>
-#include <type_traits>
 #include <utility>
 
 
-namespace core::utils {
-
-// An enum described by a string::Enum_with_names specialization: the single source of the declared
-// enumerators and of their count for every container keyed by an enum.
-template< class Enum>
-concept Enum_with_names_like =
-  std::is_enum_v< Enum> &&
-  requires {
-    { string::Enum_with_names< Enum>::SIZE } -> std::convertible_to< std::size_t>;
-    { string::Enum_with_names< Enum>::VALUES[0] } -> std::convertible_to< Enum>;
-  };
+namespace core::utils::enums {
 
 namespace details {
 
-// Uniqueness of VALUES is already guaranteed by Enum_with_names_base (Sort_by_value duplicate check),
+// Uniqueness of VALUES is already guaranteed by With_names_base (Sort_by_value duplicate check),
 // so range [0, SIZE) plus uniqueness implies VALUES is a permutation of 0..SIZE-1, i.e. a dense enum.
-template< Enum_with_names_like Enum>
+template< With_names_like Enum>
 consteval bool is_dense_enum() {
-  using Names = string::Enum_with_names< Enum>;
+  using Names = With_names< Enum>;
   for (const Enum value : Names::VALUES) {
     const auto underlying_value = to_underlying(value);
     if (std::cmp_less(underlying_value, 0) || std::cmp_greater_equal(underlying_value, Names::SIZE)) {
@@ -45,10 +34,10 @@ consteval bool is_dense_enum() {
 // Density makes this equivalent to "value is one of the declared enumerators": the declared values are
 // unique and SIZE of them fit in [0, SIZE), so they are exactly 0..SIZE-1 and nothing else can land there.
 // Hence the constraint - without density the range test would say nothing about being declared.
-template< Enum_with_names_like Enum> requires (details::is_dense_enum< Enum>())
+template< With_names_like Enum> requires (details::is_dense_enum< Enum>())
 constexpr bool is_declared_enumerator(const Enum value) noexcept {
   const auto index = to_underlying(value);
-  return !std::cmp_less(index, 0) && std::cmp_less(index, string::Enum_with_names< Enum>::SIZE);
+  return !std::cmp_less(index, 0) && std::cmp_less(index, With_names< Enum>::SIZE);
 }
 
 namespace details {
@@ -59,19 +48,19 @@ namespace details {
 // failure. The valid case is a constrained specialization, not a static_assert next to the alias: an index
 // outside the list would otherwise still be formed after the assertion had fired, adding that very failure
 // back on top.
-template< class Types, Enum_with_names_like Enum, Enum key>
-struct Enum_element {
+template< class Types, With_names_like Enum, Enum key>
+struct Element {
   static_assert(
     meta::ALWAYS_FALSE< Types>,
-    "Enum value is not declared in the Enum_with_names specialization"
+    "Enum value is not declared in the With_names specialization"
   );
 };
 
-template< class Types, Enum_with_names_like Enum, Enum key> requires (is_declared_enumerator(key))
-struct Enum_element< Types, Enum, key> {
+template< class Types, With_names_like Enum, Enum key> requires (is_declared_enumerator(key))
+struct Element< Types, Enum, key> {
   using type = std::tuple_element_t< static_cast< std::size_t>(to_underlying(key)), Types>;
 };
 
 } // namespace details
 
-} // namespace core::utils
+} // namespace core::utils::enums

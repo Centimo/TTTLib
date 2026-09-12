@@ -1,4 +1,4 @@
-#include "core/utils/enum_variant.hpp"
+#include "core/utils/enums/Variant.hpp"
 
 #include <gtest/gtest.h>
 
@@ -12,37 +12,38 @@
 #include <vector>
 
 using namespace core::utils;
+using namespace core::utils::enums;
 using namespace core::utils::string;
 
 // ---- dense enum with names declared in enum order ----
 enum class Kind { NUMBER, TEXT, WEIGHTS };
 
-namespace core::utils::string {
+namespace core::utils::enums {
 template<>
-class Enum_with_names< Kind> : public Enum_with_names_base<
-  Named_enum_value< Kind::NUMBER,  Constexpr_string<"NUMBER">>,
-  Named_enum_value< Kind::TEXT,    Constexpr_string<"TEXT">>,
-  Named_enum_value< Kind::WEIGHTS, Constexpr_string<"WEIGHTS">>
+class With_names< Kind> : public With_names_base<
+  Named_value< Kind::NUMBER,  Constexpr_string<"NUMBER">>,
+  Named_value< Kind::TEXT,    Constexpr_string<"TEXT">>,
+  Named_value< Kind::WEIGHTS, Constexpr_string<"WEIGHTS">>
 > {};
-} // namespace core::utils::string
+} // namespace core::utils::enums
 
 // ---- dense enum with names declared out of enum order ----
 enum class Slot { FIRST, SECOND, THIRD };
 
-namespace core::utils::string {
+namespace core::utils::enums {
 template<>
-class Enum_with_names< Slot> : public Enum_with_names_base<
-  Named_enum_value< Slot::THIRD,  Constexpr_string<"THIRD">>,
-  Named_enum_value< Slot::FIRST,  Constexpr_string<"FIRST">>,
-  Named_enum_value< Slot::SECOND, Constexpr_string<"SECOND">>
+class With_names< Slot> : public With_names_base<
+  Named_value< Slot::THIRD,  Constexpr_string<"THIRD">>,
+  Named_value< Slot::FIRST,  Constexpr_string<"FIRST">>,
+  Named_value< Slot::SECOND, Constexpr_string<"SECOND">>
 > {};
-} // namespace core::utils::string
+} // namespace core::utils::enums
 
-using Message = Enum_variant< Kind, int, std::string, std::vector< double>>;
-using Codes = Enum_variant< Kind, int, char, double>;
+using Message = Variant< Kind, int, std::string, std::vector< double>>;
+using Codes = Variant< Kind, int, char, double>;
 
 // The same type in two positions: it can only be reached through its key.
-using Slots = Enum_variant< Slot, int, std::string, int>;
+using Slots = Variant< Slot, int, std::string, int>;
 
 // ---- constexpr use ----
 constexpr Codes CODES(in_place_key< Kind::TEXT>, 'z');
@@ -95,7 +96,7 @@ struct Fragile {
   Fragile(Fragile&&) noexcept = default;
 };
 
-using Fragile_holder = Enum_variant< Kind, int, Fragile, std::vector< double>>;
+using Fragile_holder = Variant< Kind, int, Fragile, std::vector< double>>;
 
 // Copyable and assignable, but its copy constructor throws on demand: this is what an assignment between
 // two containers has to survive without losing the element it already held.
@@ -120,7 +121,7 @@ struct Fragile_copy {
   Fragile_copy& operator = (Fragile_copy&&) noexcept = default;
 };
 
-using Fragile_copy_holder = Enum_variant< Kind, int, Fragile_copy, std::vector< double>>;
+using Fragile_copy_holder = Variant< Kind, int, Fragile_copy, std::vector< double>>;
 
 struct To_text {
   std::string operator () (const int value) const {
@@ -241,7 +242,7 @@ TEST(EnumVariant, EmplaceFromTheContainersOwnElementKeepsTheValue) {
   // An element whose copy cannot throw is the tempting case for building in place, and the one where
   // reading the destroyed element would go unnoticed the longest: the count says the copy came from a
   // living object.
-  Enum_variant< Kind, int, std::shared_ptr< int>, std::vector< double>> holder(std::make_shared< int>(7));
+  Variant< Kind, int, std::shared_ptr< int>, std::vector< double>> holder(std::make_shared< int>(7));
   holder.emplace< Kind::TEXT>(holder.at< Kind::TEXT>());
 
   ASSERT_TRUE(holder.at< Kind::TEXT>());
@@ -289,7 +290,7 @@ TEST(EnumVariant, VisitReceivesTheLiveElementAndItsKey) {
 
   const auto describe = [](const auto& element, const auto key) {
     return
-      std::string(Enum_with_names< Kind>::get_name_by_value< decltype(key)::value>())
+      std::string(With_names< Kind>::get_name_by_value< decltype(key)::value>())
       + '='
       + To_text{}(element);
   };
@@ -321,7 +322,7 @@ TEST(EnumVariant, VisitWorksAtCompileTime) {
 }
 
 TEST(EnumVariant, UnorderedDeclarationStillDiscriminatesByUnderlyingValue) {
-  // Enum_with_names< Slot> declares THIRD, FIRST, SECOND; the positions still follow the enum.
+  // With_names< Slot> declares THIRD, FIRST, SECOND; the positions still follow the enum.
   const Slots second("text");
 
   EXPECT_EQ(second.active_key(), Slot::SECOND);
@@ -329,7 +330,7 @@ TEST(EnumVariant, UnorderedDeclarationStillDiscriminatesByUnderlyingValue) {
 }
 
 TEST(EnumVariant, HoldsAMoveOnlyAlternative) {
-  Enum_variant< Kind, int, std::unique_ptr< int>, std::vector< double>> holder(std::make_unique< int>(3));
+  Variant< Kind, int, std::unique_ptr< int>, std::vector< double>> holder(std::make_unique< int>(3));
 
   ASSERT_TRUE(holder.holds< Kind::TEXT>());
   ASSERT_TRUE(holder.at< Kind::TEXT>());

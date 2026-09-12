@@ -5,9 +5,10 @@ add_executable(tttlib_tests
     meta_tests.cpp
     string_tests.cpp
     concepts_tests.cpp
-    enum_array_tests.cpp
-    enum_tuple_tests.cpp
-    enum_variant_tests.cpp
+    enums/Array_tests.cpp
+    enums/Tuple_tests.cpp
+    enums/Variant_tests.cpp
+    enums/With_names_tests.cpp
     general_tests.cpp
     ranges_tests.cpp
     time_tests.cpp

@@ -49,7 +49,7 @@ static_assert(!std::is_constructible_v< At_least< 2, int>, int>);
 static_assert(!std::is_convertible_v< int, Nonempty< int>>);
 static_assert(std::is_constructible_v< Nonempty< int>, int>);
 
-// Narrowing is rejected the same way Enum_array rejects it: T{argument} is required in addition to T(argument).
+// Narrowing is rejected the same way enums::Array rejects it: T{argument} is required in addition to T(argument).
 static_assert(!std::is_constructible_v< Nonempty< int>, double>);
 
 // A Container is never silently wrapped as one element through the variadic constructor: make(Container) is

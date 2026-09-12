@@ -4,7 +4,12 @@ find_package(fmt REQUIRED)
 add_library(${PROJECT_NAME} STATIC
     core/SRSW_cell.hpp
     core/utils.hpp
-    core/utils/enum_array.hpp
+    core/utils/at_least.hpp
+    core/utils/enums/Array.hpp
+    core/utils/enums/general.hpp
+    core/utils/enums/Tuple.hpp
+    core/utils/enums/Variant.hpp
+    core/utils/enums/With_names.hpp
     core/utils/general.hpp
     core/utils/general.cpp
     core/utils/meta.hpp
