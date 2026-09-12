@@ -1,17 +1,17 @@
 find_package(GTest REQUIRED)
 
 add_executable(tttlib_tests
-    at_least_tests.cpp
-    meta_tests.cpp
-    string_tests.cpp
-    concepts_tests.cpp
-    enums/Array_tests.cpp
-    enums/Tuple_tests.cpp
-    enums/Variant_tests.cpp
-    enums/With_names_tests.cpp
-    general_tests.cpp
-    ranges_tests.cpp
-    time_tests.cpp
+    at_least.cpp
+    meta.cpp
+    string.cpp
+    concepts.cpp
+    enums/array.cpp
+    enums/tuple.cpp
+    enums/variant.cpp
+    enums/with_names.cpp
+    general.cpp
+    ranges.cpp
+    time.cpp
 )
 
 # TTTLibrary carries the include path (src/lib) and fmt as PUBLIC usage requirements.
